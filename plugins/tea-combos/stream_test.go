@@ -501,9 +501,9 @@ func TestHandleAbiExecuteStreamEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	raw, err := handleAbiExecuteStream(request)
+	raw, err := abiHandleMethod(pluginabi.MethodExecutorExecuteStream, request)
 	if err != nil {
-		t.Fatalf("handleAbiExecuteStream: %v", err)
+		t.Fatalf("abiHandleMethod: %v", err)
 	}
 	var envelope struct {
 		OK     bool                            `json:"ok"`

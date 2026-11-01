@@ -69,6 +69,21 @@ stops the chain and is returned with its real HTTP status. When every member fai
 executor returns the last status, `retryable: true`, and an attempt trace naming each member and
 status. Request bodies and credentials are never logged.
 
+## Streaming
+
+`ExecuteStream` applies the same selector order and retryable/non-retryable rule, but its fallback
+window is narrower: a combo falls back to the next member **only before the first payload byte
+reaches the client**. A member counts as opened only once its stream produces a non-empty chunk (or
+ends cleanly with no chunks, which is a successful empty response). If opening the stream or the
+first read fails retryably before any payload, the member stream is closed and the next member is
+tried. Once the first chunk has been forwarded, a later failure is final: the member stream is
+closed, the error is reported as the stream's terminal error, and no other member is tried. This is
+the same limit CPA's own alias-pool retry has, and it cannot be lifted without buffering.
+
+Nothing is buffered beyond the single first chunk needed to make that decision. Every subsequent
+chunk is forwarded as soon as it is read, so time-to-first-token is preserved; a test proves the
+next read cannot start until the previous chunk has been emitted.
+
 ## Build
 
 ```bash
