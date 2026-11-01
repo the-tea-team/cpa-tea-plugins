@@ -114,6 +114,17 @@ rm -f <id>.h
   `host.model.execute` per member. Proven against a real CPA with a mock upstream. Read
   `spikes/tea-combo-spike/FINDINGS.md` before writing `tea-combos`. It lists seven traps, the worst
   being that an executor with no declared input/output formats is skipped silently.
+- **Native alias pools already do RR + failover.** Repeating one `alias` in an upstream group's
+  `models` makes a pool: one client-visible alias, requests round-robin across the listed upstreams,
+  failures fall through to the next pool entry. Do not rebuild single-provider RR as a feature. Our
+  gap is cross-provider combos, first-class named objects, runtime editing, and session affinity.
+- **Plugin pages appear in CPA-Manager-Plus automatically** (verified against CPAMP `a67ed88`): return a
+  `ResourceRoute` with a non-empty `Menu` from the `ManagementAPI` capability, set `Metadata.Logo`, keep
+  the plugin enabled, and CPAMP renders a sidebar entry plus an iframe of that resource
+  (`pluginResources.ts` -> `collectPluginResourceEntries`). No upstream change needed.
+- **Resource routes are NOT management-authenticated.** `pluginResourceNoRoute` bypasses the management
+  middleware, so a resource route may serve only a static shell; all data goes through authenticated
+  `/v0/management/` routes. They also 404 when `home.enabled: true`.
 - Streaming fallback is not proven and is only safe before the first byte is sent.
 - Still unverified: whether scheduler candidate `Metadata` exposes per-credential quota, or quota must
   be fetched through `QuotaProvider` and joined by auth ID. Spike with real credentials.
