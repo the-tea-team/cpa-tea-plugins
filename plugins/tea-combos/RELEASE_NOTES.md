@@ -42,4 +42,6 @@
 - `home.enabled: true` makes CPA return 404 for every plugin resource page (`internal/api/server_management.go:293`); the sidebar entry cannot load then. Not reproducible here: v8.0.51 enables home only through `-home-jwt` and needs a reachable home endpoint. Documented, not worked around.
 - A CPA 503 cooldown on a member can hide that member from routing before the request reaches the upstream; this is core behaviour.
 - Binding persistence is write-behind (~2 s). A graceful CPA stop flushes it; a SIGKILL can lose up to that window.
+- N1 (UI, minor, from QA): a 128-character combo name widens the combos table past its container, so Strategy, Members and Actions are clipped. Names up to 128 characters are valid; the table does not wrap them.
+- Noted (core, not this change): a few wrong management keys from one IP trigger CPA's own IP ban (403) that clears after about a minute.
 - Pending: G5 independent audit.
