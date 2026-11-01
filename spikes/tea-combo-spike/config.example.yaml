@@ -1,0 +1,38 @@
+server:
+  host: "127.0.0.1"
+  port: 18319
+access:
+  api-keys:
+    - "spike-key"
+management:
+  allow-remote: false
+  secret-key: "change-me"
+observability:
+  logs:
+    debug: true
+openai-compatibility:
+  - name: "mock"
+    base-url: "http://127.0.0.1:18399/v1"
+    request-retry: 0
+    keys:
+      - api-key: "mock-key"
+    models:
+      - name: "bad-model"
+        alias: "bad-model"
+      - name: "bad400"
+        alias: "bad400"
+      - name: "good-model"
+        alias: "good-model"
+plugins:
+  enabled: true
+  dir: "<spike-dir>/plugins"
+  configs:
+    tea-combo-spike:
+      enabled: true
+      combos:
+        spike-combo:
+          members: ["bad-model", "good-model"]
+        spike-allbad:
+          members: ["bad-model", "bad-model"]
+        spike-stop:
+          members: ["bad400", "good-model"]

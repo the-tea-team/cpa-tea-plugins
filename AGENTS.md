@@ -107,17 +107,16 @@ rm -f <id>.h
    and the "no eligible credential" case.
 6. `scripts/check.sh` passes before pushing.
 
-## Known open technical questions
+## Technical findings
 
-- **Combo fallback across models.** `RouteModel` returns a single provider/model; core retries
-  credentials for that target only. A combo that falls back to a *different model* therefore needs a
-  plugin `Executor` that drives the chain itself. Whether a plugin executor can invoke a built-in
-  executor for a specific model/auth in-process (via the host-callback bridge) is **unverified** —
-  spike this before designing `tea-combos`. If it cannot, the fallback is looping back over HTTP to
-  the local CPA listener, or a small upstream patch (which would break this repo's no-fork rule and
-  needs Kareem's explicit approval).
-- Whether the scheduler's candidate `Metadata` exposes per-credential quota, or whether quota must be
-  fetched separately through `QuotaProvider` and joined by auth ID. Spike with real credentials.
+- **Combo fallback across models: solved, no core patch.** A plugin registers `ModelRouter` +
+  `Executor`; the router sends the combo name to the plugin's own executor, which calls
+  `host.model.execute` per member. Proven against a real CPA with a mock upstream. Read
+  `spikes/tea-combo-spike/FINDINGS.md` before writing `tea-combos`. It lists seven traps, the worst
+  being that an executor with no declared input/output formats is skipped silently.
+- Streaming fallback is not proven and is only safe before the first byte is sent.
+- Still unverified: whether scheduler candidate `Metadata` exposes per-credential quota, or quota must
+  be fetched through `QuotaProvider` and joined by auth ID. Spike with real credentials.
 
 ## Reference material
 
