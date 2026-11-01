@@ -292,7 +292,7 @@ func abiHandleMethod(method string, request []byte) (raw []byte, err error) {
 		}
 		return abiOKEnvelope(resp)
 	case pluginabi.MethodExecutorExecuteStream:
-		return abiErrorEnvelope("not_implemented", "tea-combos: streaming is not implemented yet"), nil
+		return handleAbiExecuteStream(request)
 	case pluginabi.MethodExecutorCountTokens:
 		return abiErrorEnvelope("not_implemented", "tea-combos: token counting is not supported"), nil
 	case pluginabi.MethodExecutorHTTPRequest:

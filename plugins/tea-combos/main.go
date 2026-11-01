@@ -251,10 +251,10 @@ func retryableStatus(status int) bool {
 	return status >= 500 && status <= 599
 }
 
-// ExecuteStream is the slice C hook. It deliberately fails clearly rather than pretending to
-// stream; streaming fallback is only safe before the first byte reaches the client.
-func (p *combosPlugin) ExecuteStream(_ context.Context, _ pluginapi.ExecutorRequest) (pluginapi.ExecutorStreamResponse, error) {
-	return pluginapi.ExecutorStreamResponse{}, errors.New("tea-combos: streaming is not implemented yet")
+// ExecuteStream falls back across members only before the first payload reaches the client. See
+// stream.go; the ABI supplies the host stream id through the context.
+func (p *combosPlugin) ExecuteStream(ctx context.Context, req pluginapi.ExecutorRequest) (pluginapi.ExecutorStreamResponse, error) {
+	return p.executeStream(ctx, req)
 }
 
 func (p *combosPlugin) CountTokens(_ context.Context, _ pluginapi.ExecutorRequest) (pluginapi.ExecutorResponse, error) {
