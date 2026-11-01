@@ -20,6 +20,9 @@
 ## Signed deferrals
 - none
 
+## Signed deviations (host-forced, accepted by Kareem)
+- D1 (C15/C17, UI contract steps 2 and 5), signed 2026-11-01 ("ok D1 but test it"). The brief names a resource route at `/` and per-combo routes at `/combos/<name>`. CPA v8.0.51 rejects an empty resource path (`internal/pluginhost/management.go:190-215`) and `:`/`*` in management routes (`:121-153`), so the page is at `/v0/resource/plugins/tea-combos/combos` and per-combo operations are `/combos?name=<name>`. Kareem's condition (test it) was met: the sidebar entry and iframe load on `/combos` in CPAMP, create/edit/delete work through `?name=` via CPAMP and directly, and the brief's literal `/v0/resource/plugins/tea-combos/` returns 404 on the real binary. This also covers the brief's UI-proof URL for C20: the HTML shell is returned at `/combos`, not at `/`.
+
 ## SHOULD dispositions
 - C23 BUILD (Kareem, 2026-11-01 "ok c23"): third-implementation test for the `selector` seam. Delivered at d9efb83 (`selector_seam_test.go`).
 
@@ -31,7 +34,7 @@
 
 ## UNSIGNED (awaiting Kareem)
 - C24-R (refresh limit): combos are listed in `/v1/models` at startup, plugin reconfigure and config reload (measured 0.17 s after a config write), but NOT immediately after a UI/management edit. CPA v8.0.51 has no host callback that re-runs model registration (host methods in `internal/pluginhost/host_callbacks.go`; only callers are `sdk/cliproxy/service_lifecycle.go:141,230`, `service_plugins.go:86,147`, `service_config.go:249`). Routing is unaffected: an edit routes immediately. Options: accept, or authorise a small additive `host.model.register` callback in CPA (core change; brief says ask first).
-- D1: CPA v8.0.51 rejects resource path `/` (`internal/pluginhost/management.go:190-215`) and `:`/`*` in management routes (`:121-153`). Plugin uses `/combos` and `?name=`. Accept or reject.
+- (D1 moved to Signed deviations below.)
 
 ## INVENTED UI (accepted into release)
 - Combos table, create/edit form, member up/down reorder, key prompt / forget key, error/loading/empty states, inline-SVG logo, CSP policy. Each is brief-required; the repo has no prior UI system to reuse.
@@ -44,4 +47,6 @@
 - Binding persistence is write-behind (~2 s). A graceful CPA stop flushes it; a SIGKILL can lose up to that window.
 - N1 (UI, minor, from QA): a 128-character combo name widens the combos table past its container, so Strategy, Members and Actions are clipped. Names up to 128 characters are valid; the table does not wrap them.
 - Noted (core, not this change): a few wrong management keys from one IP trigger CPA's own IP ban (403) that clears after about a minute.
-- Pending: G5 independent audit.
+- A combo with an empty member list can be saved (201); requests for it fail with `unknown provider for model` because the router does not claim it. Not a listed requirement.
+- After a member returns 503, CPA's own cooldown can steer new round-robin conversations away from it for about two minutes (observed by the G5 audit; core behaviour).
+- Pending: R16 `home.enabled` confirmation on a running binary (see below).
