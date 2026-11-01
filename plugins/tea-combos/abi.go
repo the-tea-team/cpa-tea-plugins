@@ -223,7 +223,11 @@ func teaCombosPluginFree(ptr unsafe.Pointer, _ C.size_t) {
 }
 
 //export teaCombosPluginShutdown
-func teaCombosPluginShutdown() {}
+func teaCombosPluginShutdown() {
+	if plugin := currentPlugin.Load(); plugin != nil {
+		plugin.shutdown()
+	}
+}
 
 // abiHandleMethod recovers from panics: a panic crossing the cgo export would take CPA down,
 // so every hook failure must become an error envelope instead.
@@ -243,9 +247,17 @@ func abiHandleMethod(method string, request []byte) (raw []byte, err error) {
 				return nil, err
 			}
 		}
+		// Persist pending bindings before reloading state, so a reconfigure cannot lose a
+		// conversation that was bound since the last write-behind flush.
+		if previous := currentPlugin.Load(); previous != nil && previous.affinity != nil {
+			_ = previous.affinity.Flush()
+		}
 		plugin, err := newCombosPlugin(req.ConfigYAML, pluginLibraryDir())
 		if err != nil {
 			return nil, err
+		}
+		if previous := currentPlugin.Load(); previous != nil {
+			previous.shutdown()
 		}
 		currentPlugin.Store(plugin)
 		return abiOKEnvelope(abiRegistration{
@@ -313,6 +325,9 @@ func abiHandleMethod(method string, request []byte) (raw []byte, err error) {
 	case pluginabi.MethodExecutorIdentifier:
 		return abiOKEnvelope(map[string]string{"identifier": pluginID})
 	case pluginabi.MethodPluginShutdown:
+		if plugin := currentPlugin.Load(); plugin != nil {
+			plugin.shutdown()
+		}
 		currentPlugin.Store(nil)
 		return abiOKEnvelope(map[string]any{})
 	default:
