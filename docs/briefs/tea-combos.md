@@ -57,6 +57,12 @@ dashboards, usage-attribution changes.
 
 ## Management UI contract (verified against CPAMP `a67ed88`)
 
+**Do not copy Keeper.** `cpa-usage-keeper` is a *standalone* service with its own port and dashboard;
+the old panel's "Keeper" button existed because it had to link out to a separate process. We do better:
+the page ships inside the plugin and is served by CPA itself, so there is no extra port, no second
+deployment, and nothing for a panel to hard-code. Use `ResourceRoute` below. If you find yourself
+opening a listener or adding a compose service, you have taken the wrong path.
+
 CPAMP discovers plugin pages automatically. `apps/web/src/features/plugins/pluginResources.ts` calls
 `pluginsApi.list()`, then for every plugin where `effectiveEnabled` is true it turns each entry of
 `menus[]` into a sidebar item — label from `menu.menu`, description from `menu.description`, icon from
