@@ -9,11 +9,14 @@ cooldowns remain core-owned.
 
 - **ModelRouter** — routes a requested model to this plugin's executor when it names a configured,
   enabled combo with at least one member.
-- **Executor** — walks the combo's members with `host.model.execute`, rewriting only the request
-  body's `model` field and passing `EntryProtocol` / `ExitProtocol` through unchanged.
+- **Executor** — walks the combo's members with `host.model.execute` (and `execute_stream` for
+  streaming), rewriting only the request body's `model` field and passing `EntryProtocol` /
+  `ExitProtocol` through unchanged. Token counting and HTTP bridging are not supported.
+- **ManagementAPI** — authenticated combo CRUD under `/v0/management/` and a static page that
+  CPA-Manager-Plus lists in its sidebar. See "Management UI and API".
+- **ModelRegistrar** — publishes enabled combos in `/v1/models`. See "Model listing".
 
-Streaming, session affinity and the management API/UI are later slices. `ExecuteStream` currently
-returns a clear `not implemented yet` error; token counting and HTTP bridging are not supported.
+Session affinity keeps a conversation on one member; see "Session identity" and "Session affinity".
 
 ## Model listing
 
@@ -52,8 +55,8 @@ plugins:
             - model: gpt-4o
             - model: claude-sonnet
               provider: anthropic      # optional: pin this member's provider
-          sessionAffinity: true        # carried for the affinity slice
-          ttl: 1h                      # Go duration; validated here, used by the affinity slice
+          sessionAffinity: true        # default on; false disables affinity for this combo
+          ttl: 1h                      # Go duration; affinity binding lifetime (default 1h)
           enabled: true
 ```
 
@@ -248,7 +251,6 @@ same model and provider.
 ## Build
 
 ```bash
-scripts/new-plugin.sh  # not needed; this plugin already exists
 scripts/build.sh tea-combos
 scripts/check.sh
 ```
