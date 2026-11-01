@@ -34,7 +34,7 @@ func callABI(t *testing.T, method string, payload any) abiEnvelope {
 	return envelope
 }
 
-func TestRegistrationDeclaresOnlyRouterAndExecutor(t *testing.T) {
+func TestRegistrationDeclaresImplementedCapabilities(t *testing.T) {
 	config := []byte(fmt.Sprintf("statePath: %q\ncombos:\n  fleet:\n    members:\n      - model: gpt-a\n", filepath.Join(t.TempDir(), "state.json")))
 	envelope := callABI(t, pluginabi.MethodPluginRegister, abiLifecycleRequest{ConfigYAML: config})
 	if !envelope.OK || envelope.Error != nil {
@@ -48,8 +48,11 @@ func TestRegistrationDeclaresOnlyRouterAndExecutor(t *testing.T) {
 	if !caps.ModelRouter || !caps.Executor {
 		t.Fatalf("router/executor not declared: %+v", caps)
 	}
-	if caps.ManagementAPI || caps.Scheduler || caps.QuotaProvider || caps.FrontendAuth {
-		t.Fatalf("slice A declared an unimplemented capability: %+v", caps)
+	if !caps.ManagementAPI {
+		t.Fatalf("management API not declared: %+v", caps)
+	}
+	if caps.Scheduler || caps.QuotaProvider || caps.FrontendAuth {
+		t.Fatalf("declared an unimplemented capability: %+v", caps)
 	}
 	if caps.ExecutorModelScope != "both" {
 		t.Fatalf("executor_model_scope = %q", caps.ExecutorModelScope)

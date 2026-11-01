@@ -84,6 +84,55 @@ Nothing is buffered beyond the single first chunk needed to make that decision. 
 chunk is forwarded as soon as it is read, so time-to-first-token is preserved; a test proves the
 next read cannot start until the previous chunk has been emitted.
 
+## Management UI and API
+
+The plugin declares CPA's `ManagementAPI` capability, so it ships its own management page and
+authenticated JSON API. There is no extra process, port or compose service.
+
+**Page.** One embedded, self-contained HTML document (`ui/index.html`) is served as a CPA resource
+route: `GET /v0/resource/plugins/tea-combos/combos`. It appears as the **Combos** sidebar entry in
+CPAMP automatically, using the plugin's inline SVG logo. The document has no build step, no CDN, no
+external font and no data: the resource route is the shell only.
+
+**API.** Every data operation is a Management API route under the host-supplied `BasePath`
+(`/v0/management`):
+
+| Method | Path | Behaviour |
+|---|---|---|
+| GET | `/v0/management/plugins/tea-combos/combos` | list combos |
+| POST | `/v0/management/plugins/tea-combos/combos` | create (409 on duplicate, 400 on validation) |
+| GET | `/v0/management/plugins/tea-combos/combos?name=<name>` | one combo, 404 if absent |
+| PUT | `/v0/management/plugins/tea-combos/combos?name=<name>` | replace, 404 if absent |
+| DELETE | `/v0/management/plugins/tea-combos/combos?name=<name>` | delete, 404 if absent |
+
+Bodies are JSON, limited to 1 MiB, and decoded with unknown fields rejected. Writes go through the
+store the router reads, so an edit applies on the next request with no restart.
+
+**Why `?name=` rather than `/combos/<name>`.** CPA v8.0.51 dispatches plugin management routes by an
+exact method and path (`internal/pluginhost/management.go`), and rejects `:` and `*` in a declared
+path. Per-name path patterns cannot be registered. The handler also understands
+`/combos/<name>` when the host dispatches it, but on v8.0.51 it is not reachable, and a method with no
+declared route (for example PATCH) reaches the host's 404 rather than the handler's 405.
+
+**Resource path.** CPA v8.0.51 rejects `Path: "/"` for a `ResourceRoute` because it trims the path to
+empty, so the page is registered at `/combos` under the resource base. CPAMP follows the menu path, so
+the sidebar entry is unaffected.
+
+**Known constraint.** CPA's `pluginResourceNoRoute` returns 404 for resource pages when
+`home.enabled: true`. The plugin does not work around this; set home mode off to use the page.
+
+**Security.** Resource routes are *not* management-authenticated: CPA's `pluginResourceNoRoute` skips
+the management middleware. The page therefore never receives combo config, credentials or usage. The
+operator pastes the management secret key once; it is kept in this origin's `localStorage` under
+`tea-combos.management-key` and sent as `Authorization: Bearer <key>` on same-origin requests to the
+management routes. The key is never embedded in the HTML, never logged and never echoed by the plugin;
+the page computes the API base from its own URL rather than assuming a prefix. All management routes
+are authenticated by CPA's own middleware. Use **Forget key** to remove the stored key.
+
+The page also sets `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and a restrictive
+`Content-Security-Policy` (no remote loads; `connect-src 'self'`; no `frame-ancestors` so CPAMP can
+embed it).
+
 ## Build
 
 ```bash

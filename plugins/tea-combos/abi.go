@@ -117,6 +117,7 @@ type abiCapabilities struct {
 var abiEnabledCapabilities = abiCapabilities{
 	ModelRouter:           true,
 	Executor:              true,
+	ManagementAPI:         true,
 	ExecutorModelScope:    "both",
 	ExecutorInputFormats:  []string{"openai", "claude", "gemini", "codex"},
 	ExecutorOutputFormats: []string{"openai", "claude", "gemini", "codex"},
@@ -297,6 +298,18 @@ func abiHandleMethod(method string, request []byte) (raw []byte, err error) {
 		return abiErrorEnvelope("not_implemented", "tea-combos: token counting is not supported"), nil
 	case pluginabi.MethodExecutorHTTPRequest:
 		return abiErrorEnvelope("not_implemented", "tea-combos: HTTP bridging is not supported"), nil
+	case pluginabi.MethodManagementRegister:
+		plugin := currentPlugin.Load()
+		if plugin == nil {
+			return abiErrorEnvelope("not_ready", "plugin not registered"), nil
+		}
+		return handleManagementRegister(plugin, request)
+	case pluginabi.MethodManagementHandle:
+		plugin := currentPlugin.Load()
+		if plugin == nil {
+			return abiErrorEnvelope("not_ready", "plugin not registered"), nil
+		}
+		return handleManagementCall(plugin, request)
 	case pluginabi.MethodExecutorIdentifier:
 		return abiOKEnvelope(map[string]string{"identifier": pluginID})
 	case pluginabi.MethodPluginShutdown:

@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tea Combos</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --page-bg: Canvas;
+  --page-fg: CanvasText;
+  --muted-fg: GrayText;
+  --panel-bg: Canvas;
+  --panel-border: ButtonBorder;
+  --field-bg: Field;
+  --field-fg: FieldText;
+  --accent: LinkText;
+  --danger: Mark;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page-bg: Canvas;
+    --page-fg: CanvasText;
+    --panel-bg: Canvas;
+    --panel-border: ButtonBorder;
+    --field-bg: Field;
+    --field-fg: FieldText;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--page-bg, Canvas);
+  color: var(--page-fg, CanvasText);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+}
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-block-end: 12px;
+}
+h1 { font-size: 1.25rem; margin: 0; }
+h2 { font-size: 1rem; margin: 0 0 8px; }
+p { margin: 0 0 8px; }
+.muted { color: var(--muted-fg, GrayText); }
+.panel {
+  border: 1px solid var(--panel-border, ButtonBorder);
+  border-radius: var(--radius, 6px);
+  padding: 12px;
+  margin-block-end: 12px;
+  background: var(--panel-bg, Canvas);
+}
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block-end: 12px; }
+button {
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--panel-border, ButtonBorder);
+  border-radius: var(--radius, 6px);
+  background: ButtonFace;
+  color: ButtonText;
+  cursor: pointer;
+}
+button[disabled] { opacity: 0.55; cursor: not-allowed; }
+button.primary { background: Highlight; color: HighlightText; border-color: Highlight; }
+button.danger { color: var(--danger, Mark); }
+button.small { padding: 2px 7px; font-size: 0.85em; }
+:focus-visible { outline: 2px solid var(--accent, LinkText); outline-offset: 2px; }
+label { display: block; margin-block-end: 8px; }
+label > span { display: block; font-weight: 600; margin-block-end: 3px; }
+input[type="text"], input[type="password"], input[type="number"], select {
+  font: inherit;
+  width: 100%;
+  max-width: 420px;
+  padding: 5px 7px;
+  border: 1px solid var(--panel-border, ButtonBorder);
+  border-radius: var(--radius, 6px);
+  background: var(--field-bg, Field);
+  color: var(--field-fg, FieldText);
+}
+input[type="checkbox"] { inline-size: 1rem; block-size: 1rem; vertical-align: middle; }
+.check { display: flex; gap: 7px; align-items: center; }
+.check > span { margin: 0; font-weight: 600; }
+.notice { margin-block-end: 10px; padding: 8px 10px; border-radius: var(--radius, 6px); border: 1px solid var(--panel-border, ButtonBorder); }
+.notice[data-tone="error"] { border-color: var(--danger, Mark); color: var(--danger, Mark); }
+.notice[data-tone="success"] { border-color: var(--accent, LinkText); }
+fieldset {
+  border: 1px solid var(--panel-border, ButtonBorder);
+  border-radius: var(--radius, 6px);
+  padding: 10px;
+  margin: 0 0 10px;
+}
+caption { text-align: start; padding-block-end: 6px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: start; padding: 6px 8px; border-block-end: 1px solid var(--panel-border, ButtonBorder); vertical-align: top; }
+th { font-weight: 600; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.member {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(120px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  margin-block-end: 8px;
+}
+.member .member-actions { display: flex; gap: 4px; padding-block-end: 1px; }
+.editor-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-block-start: 12px; }
+[hidden] { display: none !important; }
+@media (max-width: 620px) {
+  .member { grid-template-columns: 1fr; }
+  .member .member-actions { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Tea Combos</h1>
+  <span class="muted">Named model combos served by this plugin</span>
+</header>
+
+<section id="key-panel" class="panel" aria-labelledby="key-heading">
+  <h2 id="key-heading">Management key</h2>
+  <p class="muted">Paste the management secret key of this CPA instance. It is kept in this browser only and sent as a bearer token on same-origin requests to the management API.</p>
+  <div id="key-error" class="notice" data-tone="error" role="alert" hidden></div>
+  <form id="key-form" autocomplete="off">
+    <label for="key-input">
+      <span>Secret key</span>
+      <input id="key-input" name="key" type="password" required autocomplete="current-password">
+    </label>
+    <div class="editor-actions">
+      <button type="submit" class="primary">Save key</button>
+    </div>
+  </form>
+</section>
+
+<div id="app" hidden>
+  <div class="toolbar">
+    <button type="button" id="new-combo">New combo</button>
+    <button type="button" id="refresh">Refresh</button>
+    <button type="button" id="forget-key">Forget key</button>
+  </div>
+
+  <div id="notice" class="notice" role="alert" aria-live="polite" hidden></div>
+
+  <section class="panel" aria-labelledby="list-heading">
+    <h2 id="list-heading">Combos</h2>
+    <p id="loading" class="muted" hidden>Loading…</p>
+    <p id="empty-state" class="muted" hidden>No combos yet</p>
+    <div id="table-wrap" class="table-wrap" hidden>
+      <table>
+        <caption class="muted">Configured combos and how requests are spread across their members</caption>
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Strategy</th>
+            <th scope="col">Members</th>
+            <th scope="col">Affinity</th>
+            <th scope="col">Enabled</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="combo-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="editor-panel" class="panel" hidden aria-labelledby="editor-heading">
+    <h2 id="editor-heading">New combo</h2>
+    <div id="editor-error" class="notice" data-tone="error" role="alert" hidden></div>
+    <form id="combo-form" autocomplete="off">
+      <label for="combo-name">
+        <span>Name</span>
+        <input id="combo-name" name="name" type="text" required>
+      </label>
+      <label for="combo-strategy">
+        <span>Strategy</span>
+        <select id="combo-strategy" name="strategy">
+          <option value="round-robin">round-robin</option>
+          <option value="failover">failover</option>
+        </select>
+      </label>
+
+      <fieldset>
+        <legend>Members</legend>
+        <p class="muted">Members are tried in this order (round-robin rotates the starting point).</p>
+        <div id="members"></div>
+        <button type="button" id="add-member">Add member</button>
+      </fieldset>
+
+      <label class="check" for="combo-affinity">
+        <input id="combo-affinity" name="sessionAffinity" type="checkbox">
+        <span>Session affinity</span>
+      </label>
+      <label for="combo-ttl">
+        <span>Affinity TTL (blank for default, for example 1h)</span>
+        <input id="combo-ttl" name="ttl" type="text" placeholder="1h">
+      </label>
+      <label class="check" for="combo-enabled">
+        <input id="combo-enabled" name="enabled" type="checkbox" checked>
+        <span>Enabled</span>
+      </label>
+
+      <div class="editor-actions">
+        <button type="submit" id="save-combo" class="primary">Save</button>
+        <button type="button" id="delete-combo" class="danger" hidden>Delete</button>
+        <button type="button" id="cancel-edit">Cancel</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<p id="fatal" class="notice" data-tone="error" role="alert" hidden></p>
+
+<script>
+(function () {
+  "use strict";
+
+  var STORAGE_KEY = "tea-combos.management-key";
+  var MARKER = "/resource/plugins/";
+
+  var key = "";
+  var apiBase = "";
+  var combos = [];
+  var editingName = null;
+  var busy = false;
+
+  var el = {
+    keyPanel: document.getElementById("key-panel"),
+    keyForm: document.getElementById("key-form"),
+    keyInput: document.getElementById("key-input"),
+    keyError: document.getElementById("key-error"),
+    app: document.getElementById("app"),
+    notice: document.getElementById("notice"),
+    loading: document.getElementById("loading"),
+    empty: document.getElementById("empty-state"),
+    tableWrap: document.getElementById("table-wrap"),
+    rows: document.getElementById("combo-rows"),
+    editorPanel: document.getElementById("editor-panel"),
+    editorHeading: document.getElementById("editor-heading"),
+    editorError: document.getElementById("editor-error"),
+    form: document.getElementById("combo-form"),
+    name: document.getElementById("combo-name"),
+    strategy: document.getElementById("combo-strategy"),
+    members: document.getElementById("members"),
+    affinity: document.getElementById("combo-affinity"),
+    ttl: document.getElementById("combo-ttl"),
+    enabled: document.getElementById("combo-enabled"),
+    save: document.getElementById("save-combo"),
+    deleteButton: document.getElementById("delete-combo"),
+    fatal: document.getElementById("fatal")
+  };
+
+  function deriveAPIBase() {
+    var path = window.location.pathname;
+    var index = path.indexOf(MARKER);
+    if (index < 0) { return ""; }
+    var pluginID = path.slice(index + MARKER.length).split("/")[0];
+    if (!pluginID) { return ""; }
+    return path.slice(0, index) + "/management/plugins/" + pluginID;
+  }
+
+  function showFatal(message) {
+    el.fatal.textContent = message;
+    el.fatal.hidden = false;
+    el.keyPanel.hidden = true;
+    el.app.hidden = true;
+  }
+
+  function setNotice(target, message, tone) {
+    target.textContent = message || "";
+    if (message) {
+      target.setAttribute("data-tone", tone || "error");
+      target.hidden = false;
+    } else {
+      target.hidden = true;
+    }
+  }
+
+  function ApiError(status, message) {
+    this.status = status;
+    this.message = message;
+  }
+
+  function api(method, name, payload) {
+    var target = apiBase + "/combos";
+    if (name) { target += "?name=" + encodeURIComponent(name); }
+    var headers = { "Authorization": "Bearer " + key };
+    var body;
+    if (payload !== undefined) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(payload);
+    }
+    return fetch(target, {
+      method: method,
+      headers: headers,
+      body: body,
+      cache: "no-store",
+      credentials: "omit"
+    }).catch(function (error) {
+      throw new ApiError(0, "Network error: " + error.message);
+    }).then(function (response) {
+      var textPromise = response.status === 204 ? Promise.resolve("") : response.text();
+      return textPromise.then(function (text) {
+        var data = null;
+        if (text) {
+          try { data = JSON.parse(text); } catch (ignore) { data = { error: text }; }
+        }
+        if (!response.ok) {
+          var message = (data && data.error) ? data.error : (response.statusText || ("HTTP " + response.status));
+          throw new ApiError(response.status, message);
+        }
+        return data;
+      });
+    });
+  }
+
+  function handleError(error) {
+    if (error && (error.status === 401 || error.status === 403)) {
+      localStorage.removeItem(STORAGE_KEY);
+      key = "";
+      el.app.hidden = true;
+      el.keyPanel.hidden = false;
+      el.keyInput.value = "";
+      setNotice(el.keyError, "Management key rejected. Paste it again.", "error");
+      el.keyInput.focus();
+      return;
+    }
+    var message = error && error.message ? error.message : "Request failed";
+    setNotice(el.notice, message, "error");
+  }
+
+  function loadCombos() {
+    setNotice(el.notice, "");
+    el.loading.hidden = false;
+    el.empty.hidden = true;
+    el.tableWrap.hidden = true;
+    return api("GET").then(function (data) {
+      combos = (data && data.combos) || [];
+      renderTable();
+    }).catch(handleError).then(function () {
+      el.loading.hidden = true;
+    });
+  }
+
+  function renderTable() {
+    el.rows.textContent = "";
+    if (!combos.length) {
+      el.empty.hidden = false;
+      el.tableWrap.hidden = true;
+      return;
+    }
+    el.empty.hidden = true;
+    el.tableWrap.hidden = false;
+
+    combos.forEach(function (combo) {
+      var row = document.createElement("tr");
+
+      var nameCell = document.createElement("td");
+      nameCell.textContent = combo.name;
+      row.appendChild(nameCell);
+
+      var strategyCell = document.createElement("td");
+      strategyCell.textContent = combo.strategy || "round-robin";
+      row.appendChild(strategyCell);
+
+      var membersCell = document.createElement("td");
+      membersCell.textContent = (combo.members || []).map(function (member) {
+        return member.provider ? member.model + " (" + member.provider + ")" : member.model;
+      }).join(", ");
+      row.appendChild(membersCell);
+
+      var affinityCell = document.createElement("td");
+      affinityCell.textContent = combo.sessionAffinity ? ("on" + (combo.ttl ? ", ttl " + combo.ttl : "")) : "off";
+      row.appendChild(affinityCell);
+
+      var enabledCell = document.createElement("td");
+      enabledCell.textContent = combo.enabled === false ? "no" : "yes";
+      row.appendChild(enabledCell);
+
+      var actionsCell = document.createElement("td");
+      var actions = document.createElement("div");
+      actions.className = "actions";
+      var edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "small";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", function () { openEditor(combo); });
+      actions.appendChild(edit);
+      actionsCell.appendChild(actions);
+      row.appendChild(actionsCell);
+
+      el.rows.appendChild(row);
+    });
+  }
+
+  function addMemberRow(member) {
+    var row = document.createElement("div");
+    row.className = "member";
+    row.setAttribute("role", "group");
+
+    var modelLabel = document.createElement("label");
+    var modelCaption = document.createElement("span");
+    modelCaption.textContent = "Model";
+    var modelInput = document.createElement("input");
+    modelInput.type = "text";
+    modelInput.required = true;
+    modelInput.className = "member-model";
+    modelInput.value = (member && member.model) || "";
+    modelLabel.appendChild(modelCaption);
+    modelLabel.appendChild(modelInput);
+    row.appendChild(modelLabel);
+
+    var providerLabel = document.createElement("label");
+    var providerCaption = document.createElement("span");
+    providerCaption.textContent = "Provider (optional)";
+    var providerInput = document.createElement("input");
+    providerInput.type = "text";
+    providerInput.className = "member-provider";
+    providerInput.value = (member && member.provider) || "";
+    providerLabel.appendChild(providerCaption);
+    providerLabel.appendChild(providerInput);
+    row.appendChild(providerLabel);
+
+    var actions = document.createElement("div");
+    actions.className = "member-actions";
+
+    var up = document.createElement("button");
+    up.type = "button";
+    up.className = "small";
+    up.textContent = "↑";
+    up.setAttribute("aria-label", "Move member up");
+    up.addEventListener("click", function () { moveMember(row, -1); });
+    actions.appendChild(up);
+
+    var down = document.createElement("button");
+    down.type = "button";
+    down.className = "small";
+    down.textContent = "↓";
+    down.setAttribute("aria-label", "Move member down");
+    down.addEventListener("click", function () { moveMember(row, 1); });
+    actions.appendChild(down);
+
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "small";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", "Remove member");
+    remove.addEventListener("click", function () { row.remove(); refreshMemberButtons(); });
+    actions.appendChild(remove);
+
+    row.appendChild(actions);
+    el.members.appendChild(row);
+    refreshMemberButtons();
+  }
+
+  function moveMember(row, delta) {
+    if (delta < 0 && row.previousElementSibling) {
+      el.members.insertBefore(row, row.previousElementSibling);
+    } else if (delta > 0 && row.nextElementSibling) {
+      el.members.insertBefore(row.nextElementSibling, row);
+    }
+    refreshMemberButtons();
+  }
+
+  function refreshMemberButtons() {
+    var rows = Array.prototype.slice.call(el.members.querySelectorAll(".member"));
+    rows.forEach(function (row, index) {
+      var buttons = row.querySelectorAll(".member-actions button");
+      buttons[0].disabled = index === 0;
+      buttons[1].disabled = index === rows.length - 1;
+    });
+  }
+
+  function openEditor(combo) {
+    editingName = combo ? combo.name : null;
+    el.editorHeading.textContent = combo ? ("Edit " + combo.name) : "New combo";
+    el.name.value = combo ? combo.name : "";
+    el.name.disabled = Boolean(combo);
+    el.strategy.value = (combo && combo.strategy) || "round-robin";
+    el.affinity.checked = Boolean(combo && combo.sessionAffinity);
+    el.ttl.value = (combo && combo.ttl) || "";
+    el.enabled.checked = !(combo && combo.enabled === false);
+    el.members.textContent = "";
+    var members = (combo && combo.members && combo.members.length) ? combo.members : [{}];
+    members.forEach(addMemberRow);
+    el.deleteButton.hidden = !combo;
+    setNotice(el.editorError, "");
+    el.editorPanel.hidden = false;
+    el.name.focus();
+  }
+
+  function closeEditor() {
+    editingName = null;
+    el.editorPanel.hidden = true;
+    setNotice(el.editorError, "");
+  }
+
+  function collectCombo() {
+    var members = Array.prototype.slice.call(el.members.querySelectorAll(".member")).map(function (row) {
+      var member = { model: row.querySelector(".member-model").value.trim() };
+      var provider = row.querySelector(".member-provider").value.trim();
+      if (provider) { member.provider = provider; }
+      return member;
+    });
+    return {
+      name: el.name.value.trim(),
+      strategy: el.strategy.value,
+      members: members,
+      sessionAffinity: el.affinity.checked,
+      ttl: el.ttl.value.trim(),
+      enabled: el.enabled.checked
+    };
+  }
+
+  function saveCombo(event) {
+    event.preventDefault();
+    if (busy) { return; }
+    var combo = collectCombo();
+    if (!combo.members.length) {
+      setNotice(el.editorError, "Add at least one member.", "error");
+      return;
+    }
+    busy = true;
+    el.save.disabled = true;
+    setNotice(el.editorError, "");
+    var request = editingName
+      ? api("PUT", editingName, combo)
+      : api("POST", "", combo);
+    request.then(function () {
+      setNotice(el.notice, editingName ? "Combo updated." : "Combo created.", "success");
+      closeEditor();
+      return loadCombos();
+    }).catch(function (error) {
+      if (error && (error.status === 401 || error.status === 403)) {
+        handleError(error);
+        return;
+      }
+      setNotice(el.editorError, error.message || "Save failed", "error");
+    }).then(function () {
+      busy = false;
+      el.save.disabled = false;
+    });
+  }
+
+  function deleteCombo() {
+    if (!editingName || busy) { return; }
+    if (!window.confirm("Delete combo " + editingName + "?")) { return; }
+    busy = true;
+    el.deleteButton.disabled = true;
+    api("DELETE", editingName).then(function () {
+      setNotice(el.notice, "Combo deleted.", "success");
+      closeEditor();
+      return loadCombos();
+    }).catch(function (error) {
+      if (error && (error.status === 401 || error.status === 403)) {
+        handleError(error);
+        return;
+      }
+      setNotice(el.editorError, error.message || "Delete failed", "error");
+    }).then(function () {
+      busy = false;
+      el.deleteButton.disabled = false;
+    });
+  }
+
+  function unlock() {
+    el.keyPanel.hidden = true;
+    el.app.hidden = false;
+    setNotice(el.keyError, "");
+    return loadCombos();
+  }
+
+  el.keyForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var value = el.keyInput.value.trim();
+    if (!value) {
+      setNotice(el.keyError, "Enter the management key.", "error");
+      return;
+    }
+    key = value;
+    localStorage.setItem(STORAGE_KEY, value);
+    el.keyInput.value = "";
+    unlock();
+  });
+
+  document.getElementById("forget-key").addEventListener("click", function () {
+    localStorage.removeItem(STORAGE_KEY);
+    key = "";
+    combos = [];
+    el.rows.textContent = "";
+    el.tableWrap.hidden = true;
+    el.empty.hidden = true;
+    el.app.hidden = true;
+    el.keyPanel.hidden = false;
+    setNotice(el.keyError, "");
+    el.keyInput.focus();
+  });
+
+  document.getElementById("new-combo").addEventListener("click", function () { openEditor(null); });
+  document.getElementById("refresh").addEventListener("click", loadCombos);
+  document.getElementById("add-member").addEventListener("click", function () { addMemberRow({}); });
+  document.getElementById("cancel-edit").addEventListener("click", closeEditor);
+  el.form.addEventListener("submit", saveCombo);
+  el.deleteButton.addEventListener("click", deleteCombo);
+
+  apiBase = deriveAPIBase();
+  if (!apiBase) {
+    showFatal("Cannot determine the management API path from this page URL. Open the Combos page from CPA's management UI.");
+    return;
+  }
+  key = localStorage.getItem(STORAGE_KEY) || "";
+  if (key) {
+    unlock();
+  } else {
+    el.keyPanel.hidden = false;
+    el.keyInput.focus();
+  }
+})();
+</script>
+</body>
+</html>

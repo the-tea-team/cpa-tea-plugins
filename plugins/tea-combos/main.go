@@ -91,6 +91,7 @@ func (p *combosPlugin) plugin() pluginapi.Plugin {
 			Version:          pluginVersion,
 			Author:           "The Tea Team",
 			GitHubRepository: "https://github.com/the-tea-team/cpa-tea-plugins",
+			Logo:             pluginLogo,
 			ConfigFields: []pluginapi.ConfigField{
 				{
 					Name:        "statePath",
@@ -105,8 +106,9 @@ func (p *combosPlugin) plugin() pluginapi.Plugin {
 			},
 		},
 		Capabilities: pluginapi.Capabilities{
-			ModelRouter: p,
-			Executor:    p,
+			ModelRouter:   p,
+			Executor:      p,
+			ManagementAPI: p,
 		},
 	}
 }
