@@ -1,0 +1,45 @@
+name: tea-ci
+
+# Gates for the plugin suite: formatting, vet, tests, native c-shared builds, and a registry
+# that matches each plugin's plugin.json. There is no CPA fork to build.
+#
+# Runs on GitHub-hosted runners (public repo, so minutes are free).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tea-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: plugin gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache: false
+
+      - name: Install c-shared build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev
+
+      - name: Download plugin modules
+        run: |
+          for mod in plugins/*/go.mod vendor/*/*/go.mod; do
+            [ -f "$mod" ] || continue
+            (cd "$(dirname "$mod")" && go mod download)
+          done
+
+      - name: gofmt, vet, tests, c-shared build, registry
+        run: scripts/check.sh

@@ -1,0 +1,25 @@
+# Build artifacts (plugins are shared libraries; never commit them)
+*.so
+*.dylib
+*.dll
+*.h
+*.test
+*.out
+dist/
+build/
+
+# Local dev state (CPA instance, credentials, config)
+.dev/
+.dev-cpa/
+config.yaml
+config.local.yaml
+auths/
+*.cds
+
+# Editor / OS noise
+*.swp
+*.swo
+.~*
+.DS_Store
+.idea/
+.vscode/
