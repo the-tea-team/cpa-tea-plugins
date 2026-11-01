@@ -138,7 +138,14 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 	if err != nil {
 		return -1, nil, nil, &comboError{Status: http.StatusInternalServerError, Message: err.Error()}
 	}
-	order := withPreferred(selector.Order(combo, sessionKey(req)), preferredIndex)
+	// Session affinity, same rules as the non-stream path: the bound member goes first, a binding
+	// is recorded only once a member has served, and a non-retryable stop or an exhausted chain
+	// leaves it untouched. An explicit preferredIndex wins over a resolved binding.
+	affinityKey, boundIndex, bound := p.affinity.Resolve(combo, req)
+	if preferredIndex < 0 && bound {
+		preferredIndex = boundIndex
+	}
+	order := withPreferred(selector.Order(combo, affinityKey), preferredIndex)
 
 	trace := make([]attemptTrace, 0, len(order))
 	lastStatus := 0
@@ -210,6 +217,7 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 		if len(first) == 0 && done {
 			// A clean empty stream is a successful member: nothing to forward, no fallback.
 			handle.Close()
+			p.affinity.Bind(affinityKey, index, combo)
 			return index, opened.Headers, nil, nil
 		}
 		if len(first) > 0 {
@@ -218,6 +226,7 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 				return -1, nil, nil, &comboError{Status: http.StatusBadGateway, Message: errEmit.Error()}
 			}
 		}
+		p.affinity.Bind(affinityKey, index, combo)
 		return index, opened.Headers, handle, nil
 	}
 

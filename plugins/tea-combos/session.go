@@ -58,21 +58,6 @@ func deriveSessionKey(combo Combo, req pluginapi.ExecutorRequest) (string, bool)
 	return hashSessionKey(combo.Name, identity), true
 }
 
-// sessionKey is the selector's session hint, used by the streaming seam. The non-stream executor
-// uses Affinity.Resolve, whose key is scoped by the combo it loaded; here the requested model is
-// the combo name, so the two agree. A hash is returned so no raw identity reaches a selector.
-func sessionKey(req pluginapi.ExecutorRequest) string {
-	comboName := strings.TrimSpace(req.Model)
-	if comboName == "" {
-		return ""
-	}
-	identity := sessionIdentity(req)
-	if identity == "" {
-		return ""
-	}
-	return hashSessionKey(comboName, identity)
-}
-
 func hashSessionKey(comboName, identity string) string {
 	sum := sha256.Sum256([]byte(sessionKeyVersion + "\x00" + comboName + "\x00" + identity))
 	return hex.EncodeToString(sum[:])

@@ -168,21 +168,6 @@ func TestSessionKeyDerivationTable(t *testing.T) {
 	}
 }
 
-func TestSessionKeySelectorHintMatchesComboKey(t *testing.T) {
-	combo := mustCombo(t, "fleet", StrategyRoundRobin, "m0")
-	request := pluginapi.ExecutorRequest{
-		Model:   "fleet",
-		Headers: http.Header{"X-Session-Id": {"shared-session"}},
-	}
-	key, ok := deriveSessionKey(combo, request)
-	if !ok {
-		t.Fatal("key not derived")
-	}
-	if hint := sessionKey(request); hint != key {
-		t.Fatalf("selector hint %q != combo key %q", hint, key)
-	}
-}
-
 func TestSessionKeySameInputSameKeyDifferentComboDifferentKey(t *testing.T) {
 	combo := mustCombo(t, "fleet", StrategyRoundRobin, "m0")
 	other := mustCombo(t, "other", StrategyRoundRobin, "m0")
