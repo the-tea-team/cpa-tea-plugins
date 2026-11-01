@@ -15,6 +15,25 @@ cooldowns remain core-owned.
 Streaming, session affinity and the management API/UI are later slices. `ExecuteStream` currently
 returns a clear `not implemented yet` error; token counting and HTTP bridging are not supported.
 
+## Model listing
+
+`GET /v1/models` lists every enabled combo with at least one member as a normal OpenAI model
+object: `id` is the combo name, `object` is `model`, and `owned_by` is `tea-combos`. Disabled
+combos and combos with no members are not listed, and upstream models are unaffected.
+
+The catalog is rebuilt whenever CPA re-runs plugin model registration: at startup, on plugin
+reconfigure, and on a CPA configuration reload (the config file is written or sent through the
+management config API). A combo created, deleted, enabled or disabled through this plugin's
+management API is therefore **not** reflected in `/v1/models` until one of those triggers; on
+v8.0.51 a config file write reflects it in about 0.17s. Routing reads the store directly, so the
+edit still takes effect on the next request immediately. CPA exposes no host callback that lets a
+plugin re-run registration, so the plugin cannot refresh the catalog on its own.
+
+**Name collision.** If a combo name equals an upstream model id, the upstream entry keeps the
+`/v1/models` row: CPA does not republish a model already served by a native executor, so no
+duplicate is shown. Routing is unaffected because `ModelRouter` runs before provider resolution, so
+a request for that name still reaches the combo executor.
+
 ## Configuration
 
 Lives under `plugins.configs.tea-combos` in CPA's `config.yaml`.
