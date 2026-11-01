@@ -35,6 +35,7 @@ func (e *comboError) Error() string { return e.Message }
 type combosPlugin struct {
 	store      *Store
 	roundRobin *roundRobinSelector
+	affinity   *Affinity
 }
 
 // newCombosPlugin loads the state file, merges seed combos into it, and returns a ready plugin.
@@ -54,7 +55,20 @@ func newCombosPlugin(configYAML []byte, pluginDir string) (*combosPlugin, error)
 	if err := store.MergeSeed(cfg.Combos); err != nil {
 		return nil, fmt.Errorf("persist seed combos to %s: %w", statePath, err)
 	}
-	return &combosPlugin{store: store, roundRobin: newRoundRobinSelector()}, nil
+	bindings := store.LoadBindings()
+	return &combosPlugin{
+		store:      store,
+		roundRobin: newRoundRobinSelector(),
+		affinity:   newAffinity(bindings, store.SaveBindings),
+	}, nil
+}
+
+// shutdown flushes session bindings to the state file and stops the write-behind goroutine.
+func (p *combosPlugin) shutdown() {
+	if p == nil || p.affinity == nil {
+		return
+	}
+	p.affinity.Close()
 }
 
 // resolveStatePath prefers the configured statePath, then the directory that holds the plugin
@@ -139,14 +153,14 @@ func (p *combosPlugin) RouteModel(_ context.Context, req pluginapi.ModelRouteReq
 }
 
 // Execute recovers the combo name from the requested model (route metadata does not survive),
-// asks the selector for an attempt order, and walks it through the host.
+// asks the selector for an attempt order, and walks it through the host with session affinity.
 func (p *combosPlugin) Execute(ctx context.Context, req pluginapi.ExecutorRequest) (pluginapi.ExecutorResponse, error) {
-	return p.executeCombo(ctx, req, strings.TrimSpace(req.Model), -1)
+	return p.executeCombo(ctx, req, strings.TrimSpace(req.Model))
 }
 
-// executeCombo is the slice B seam: affinity will pass a preferred member index here, and a
-// rebind hook can observe failed attempts without changing the loop's structure.
-func (p *combosPlugin) executeCombo(ctx context.Context, req pluginapi.ExecutorRequest, comboName string, preferred int) (pluginapi.ExecutorResponse, error) {
+// executeCombo is the executor seam: session affinity resolves a bound member here, keeps it
+// first in the attempt order, and records the member that finally succeeds.
+func (p *combosPlugin) executeCombo(ctx context.Context, req pluginapi.ExecutorRequest, comboName string) (pluginapi.ExecutorResponse, error) {
 	combo, ok := p.store.Get(comboName)
 	if !ok {
 		return pluginapi.ExecutorResponse{}, &comboError{Status: http.StatusNotFound, Message: fmt.Sprintf("combo %q is not configured", comboName)}
@@ -161,12 +175,21 @@ func (p *combosPlugin) executeCombo(ctx context.Context, req pluginapi.ExecutorR
 	if err != nil {
 		return pluginapi.ExecutorResponse{}, &comboError{Status: http.StatusInternalServerError, Message: err.Error()}
 	}
-	order := withPreferred(selector.Order(combo, sessionKey(req)), preferred)
-	return p.runAttempts(ctx, req, combo, order)
-}
 
-// sessionKey is reserved for slice B's affinity derivation. Slice A does not use it.
-func sessionKey(_ pluginapi.ExecutorRequest) string { return "" }
+	key, preferred, bound := p.affinity.Resolve(combo, req)
+	if !bound {
+		preferred = -1
+	}
+	order := withPreferred(selector.Order(combo, key), preferred)
+	response, used, err := p.runAttempts(ctx, req, combo, order)
+	if err != nil {
+		return pluginapi.ExecutorResponse{}, err
+	}
+	// A binding is recorded only on success. A non-retryable client error stopped the chain
+	// above and left the binding untouched, as does an exhausted chain.
+	p.affinity.Bind(key, used, combo)
+	return response, nil
+}
 
 type attemptTrace struct {
 	Member    string `json:"member"`
@@ -175,7 +198,7 @@ type attemptTrace struct {
 	Retryable bool   `json:"retryable"`
 }
 
-func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRequest, combo Combo, order []int) (pluginapi.ExecutorResponse, error) {
+func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRequest, combo Combo, order []int) (pluginapi.ExecutorResponse, int, error) {
 	trace := make([]attemptTrace, 0, len(order))
 	lastStatus := 0
 	lastMessage := ""
@@ -221,9 +244,9 @@ func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRe
 		trace = append(trace, attemptTrace{Member: member.Model, Status: status, Error: message, Retryable: retryable})
 		if !retryable {
 			if err != nil {
-				return pluginapi.ExecutorResponse{}, &comboError{Status: status, Message: message}
+				return pluginapi.ExecutorResponse{}, -1, &comboError{Status: status, Message: message}
 			}
-			return pluginapi.ExecutorResponse{Payload: result.Body, Headers: result.Headers}, nil
+			return pluginapi.ExecutorResponse{Payload: result.Body, Headers: result.Headers}, index, nil
 		}
 		lastStatus = status
 		lastMessage = message
@@ -236,7 +259,7 @@ func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRe
 		lastMessage = "every member failed retryably"
 	}
 	encodedTrace, _ := json.Marshal(trace)
-	return pluginapi.ExecutorResponse{}, &comboError{
+	return pluginapi.ExecutorResponse{}, -1, &comboError{
 		Status:    lastStatus,
 		Retryable: true,
 		Message:   fmt.Sprintf("combo %s exhausted: %s | attempts=%s", combo.Name, lastMessage, string(encodedTrace)),
