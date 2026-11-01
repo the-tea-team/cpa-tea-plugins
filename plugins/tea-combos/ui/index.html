@@ -194,7 +194,7 @@ th { font-weight: 600; }
       </fieldset>
 
       <label class="check" for="combo-affinity">
-        <input id="combo-affinity" name="sessionAffinity" type="checkbox">
+        <input id="combo-affinity" name="sessionAffinity" type="checkbox" checked>
         <span>Session affinity</span>
       </label>
       <label for="combo-ttl">
@@ -376,7 +376,8 @@ th { font-weight: 600; }
       row.appendChild(membersCell);
 
       var affinityCell = document.createElement("td");
-      affinityCell.textContent = combo.sessionAffinity ? ("on" + (combo.ttl ? ", ttl " + combo.ttl : "")) : "off";
+      var affinityOn = !(combo && combo.sessionAffinity === false);
+      affinityCell.textContent = affinityOn ? ("on" + (combo.ttl ? ", ttl " + combo.ttl : "")) : "off";
       row.appendChild(affinityCell);
 
       var enabledCell = document.createElement("td");
@@ -483,7 +484,7 @@ th { font-weight: 600; }
     el.name.value = combo ? combo.name : "";
     el.name.disabled = Boolean(combo);
     el.strategy.value = (combo && combo.strategy) || "round-robin";
-    el.affinity.checked = Boolean(combo && combo.sessionAffinity);
+    el.affinity.checked = !(combo && combo.sessionAffinity === false);
     el.ttl.value = (combo && combo.ttl) || "";
     el.enabled.checked = !(combo && combo.enabled === false);
     el.members.textContent = "";

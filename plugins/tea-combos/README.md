@@ -252,3 +252,143 @@ scripts/new-plugin.sh  # not needed; this plugin already exists
 scripts/build.sh tea-combos
 scripts/check.sh
 ```
+
+## Findings on CPA v8.0.51
+
+Everything below was measured against the real `cli-proxy-api` binary at `/root/reference/CLIProxyAPI`
+(v8.0.51), the plugin built as `c-shared`, the mock upstream in `testdata/mock-upstream.py`, and
+CPAMP at commit `a67ed88`. The raw transcript, screenshots and JSON records are under
+`/root/jethur/_work/tea-combos/slice-e/`.
+
+### End-to-end proof
+
+`testdata/run-e2e.sh [workdir] [cpa-binary] [plugin.so]` starts the mock, CPA with a scratch config
+and a flat plugin directory, then prints the mock's own request log for every case. It generates a
+throwaway client key and management key at run time and stops only the PIDs it started. Ports are
+`183xx`. `testdata/run-stream-proof.sh` remains the streaming proof.
+
+Against the 3-member `rr3` combo:
+
+- **Round-robin.** 30 requests with no session headers and distinct prompts produced exactly
+  `rr-a 10`, `rr-b 10`, `rr-c 10` in the mock log.
+- **Stickiness.** Ten requests with `X-Session-Id: s-one` all hit `rr-a`; ten with
+  `X-Session-Id: s-two` all hit `rr-b` (20 log lines, 10/10). `X-Claude-Code-Session-Id` binds the
+  same way. Both headers demonstrably reach the plugin executor as `ExecutorRequest.Headers` on the
+  real binary.
+- **Affinity off.** Nine requests with a session header to a `sessionAffinity: false` combo produced
+  `rr-a 3`, `rr-b 3`, `rr-c 3`.
+- **Rebind on a retryable failure.** A session bound to `rr-a`; `rr-a` was then made to return 503.
+  The next request logged `rr-a` followed by `rr-b` and returned `rr-b`'s body, so the binding moved
+  to the member that succeeded.
+- **Client error stops the chain.** A session bound to `rr-c`; `rr-c` then returned 400. The next
+  request returned HTTP 400 and the mock log contains only `rr-c` — `bad400`, the next member, was
+  never called. After restoring `rr-c`, the same session still hit `rr-c`, so a non-retryable error
+  leaves the binding intact.
+- **Restart persistence.** A bound session was served by `rr-c`; CPA was stopped with SIGTERM and
+  restarted with the same state file. The state file held 39 bindings after shutdown and the same
+  session was served by `rr-c` after restart. CPA's SIGTERM path does reach the plugin's shutdown
+  hook and flushes the write-behind buffer. The loss window is therefore the write-behind interval
+  (about two seconds) only for SIGKILL or a process crash; a graceful stop loses nothing.
+- **Identity rungs.** With no headers, two requests carrying the same first user message stuck to
+  one member (the first-user-message hash fired); different prompts rotated. The canonical-session
+  metadata key remains absent on the plugin route, so derivation starts at the headers.
+
+### Management page and CPAMP (`D1`: `/combos` plus `?name=`)
+
+`GET /v0/management/plugins` on the real binary reports `effective_enabled: true` for `tea-combos`,
+one menu `{"path":"/v0/resource/plugins/tea-combos/combos","menu":"Combos",...}` and an inline SVG
+`logo` of 494 bytes (data URI). CPAMP at `a67ed88` (`collectPluginResourceEntries` in
+`apps/web/src/features/plugins/pluginResources.ts`) consumes exactly `effectiveEnabled`,
+`menus[].path/menu/description` and `logo`; the payload satisfies it.
+
+Resource URLs on the real binary, unauthenticated:
+
+| Request | Status | Body |
+| --- | --- | --- |
+| `GET /v0/resource/plugins/tea-combos/` | 404 | empty (the brief's URL; the host registers `/combos`, not `/`) |
+| `GET /v0/resource/plugins/tea-combos` | 404 | empty |
+| `GET /v0/resource/plugins/tea-combos/combos` | 200 | HTML shell, 21437 bytes, `text/html; charset=utf-8`, CSP `default-src 'none'; ...`, no `frame-ancestors` |
+| `GET /v0/resource/plugins/tea-combos/combos/` | 404 | empty (the host dispatches exact paths) |
+
+CPAMP ran locally: the web panel was built from source (`npm install && npm run build`), the Go
+manager server was run pointed at the test CPA (`CPA_UPSTREAM_URL`, `CPA_MANAGEMENT_KEY`,
+`PANEL_PATH`), and a headless Chromium logged in with the CPAMP admin key. The sidebar lists
+**Combos** with the plugin logo and the page loads in the iframe at
+`/v0/resource/plugins/tea-combos/combos`. A cross-origin parent page also framed the same resource
+URL without being blocked.
+
+**D1 verdict: works.** Through CPAMP's iframe the UI created a combo (`POST` collection -> 201),
+edited it (`PUT .../combos?name=cpamp-combo` -> 200, affinity on and TTL applied) and deleted it
+(`DELETE .../combos?name=cpamp-combo` -> 204). The same CRUD was repeated directly against CPA's
+resource page. One caveat for CPAMP operators: the page asks for "the management secret key of this
+CPA instance", but behind CPAMP's manager-server proxy that same-origin route is authenticated with
+the **CPAMP Admin Key**; the CPA Management Key is rejected with 401 there. Served directly by CPA,
+the CPA Management Key is the correct credential.
+
+`home.enabled` cannot be set from the v8.0.51 YAML config: `Home` is runtime-only and is turned on
+by `-home-jwt`, which bootstraps mTLS certificates and a config from a reachable Home control plane.
+With a syntactically valid JWT pointing at an unreachable control plane the binary exits with
+`invalid -home-jwt: dial tcp ... connection refused`, so the 404 could not be observed on a running
+instance. The code path is unambiguous: `pluginResourceNoRoute`
+(`internal/api/server_management.go:293`) aborts with 404 when `cfg.Home.Enabled` is true, before
+dispatching to the plugin. The plugin does not work around this.
+
+### Open questions
+
+**1. Does a combo appear in `/v1/models`?** Before the model-listing change on this branch
+(`fb475d9`) it did not: with `rr3`, `sticky3`, `ui-combo` and the rest configured, `GET /v1/models`
+listed only upstream aliases (`rr-a`, `rr-b`, `rr-c`, `bad400`, `bad503`, `stream-*`). The host
+builds that list from `registry.GetAvailableModels`
+(`sdk/api/handlers/openai/openai_handlers.go` `OpenAIModels`), and a plugin contributes entries only
+through the separate `ModelRegistrar` capability (`Capabilities.ModelRegistrar`, wire flag
+`model_registrar`, method `model.register`); routing a virtual model does not add it to the catalog.
+That is why listing needed a plugin-side `ModelRegistrar`, not a core change.
+
+With the model-listing slice now on this branch it does appear. Against the real binary, `GET
+/v1/models` returned `bad400, bad503, noaff, rebind, rr-a, rr-b, rr-c, rr3, sticky3, stopchain,
+stream-bad, stream-cut, stream-good`: every enabled combo is listed with `owned_by: tea-combos`
+alongside the upstream aliases. Runtime edits are not reflected until CPA re-runs plugin model
+registration. Measured on the real binary: creating `live-combo` through the management API
+returned 201 but the catalog stayed `rr-a, seed-combo`; after a config-file write CPA reloaded and
+it became `live-combo, rr-a, seed-combo`. `Host.RegisterModels` runs at startup, on reconfigure and
+on config reload, and CPA exposes no host callback for a plugin to trigger it, which is why the
+plugin's own README states the refresh trigger plainly.
+
+**2. Usage attribution: the member model.** After draining the usage queue (CPAMP must not be
+collecting), a combo request produced one usage record whose fields were
+`"model":"rr-a"`, `"alias":"rr-a"`, `"provider":"openai-compatible-mock"`,
+`"executor_type":"OpenAICompatExecutor"`, `"response_model":"rr-a"`. The combo name and the
+`tea-combos` plugin id appear nowhere in the record. This matches the expectation that a combo is
+billed against the member model. The nested host execution publishes the record; the outer
+plugin-executor reporter is suppressed because the plugin made a nested call.
+
+**3. State file writability.** By default the plugin looks for `tea-combos.state.json` beside the
+loaded `.so`. That location is unusable on CPA v8.0.51: CPA shadow-copies every plugin library to
+`$TMPDIR/cliproxy-pluginhost/pid-<pid>/` and loads it from there, so a restart would silently lose
+every runtime edit. With `statePath` unset, registration fails loudly with
+`cannot determine a durable combo state file path: set plugins.configs.tea-combos.statePath`, the
+plugin is not registered and `effective_enabled` is false.
+
+An operator must set one config line:
+
+```yaml
+plugins:
+  configs:
+    tea-combos:
+      enabled: true
+      statePath: /var/lib/cli-proxy-api/tea-combos.state.json
+      combos: { ... }
+```
+
+Pointing `statePath` at an unwritable location fails at registration with the underlying write error
+(for example `create combo state temp file in /proc/sys: ... no such file or directory`) and the
+plugin stays unregistered. If the directory becomes unwritable after a successful start, a CRUD
+write returns HTTP 500 with the same kind of message; it is never swallowed. The state file is mode
+`0600`, written atomically, and bindings are written on a debounce plus on shutdown.
+
+### Fix made during the real runs
+
+The embedded editor treated an omitted `sessionAffinity` as off, while the plugin treats it as on:
+opening and saving a combo silently disabled affinity, and the table showed `off`. `ui/index.html`
+now defaults the checkbox and the table to on unless `sessionAffinity` is explicitly `false`;
+`ui_test.go` guards it.
