@@ -120,9 +120,10 @@ func (p *combosPlugin) plugin() pluginapi.Plugin {
 			},
 		},
 		Capabilities: pluginapi.Capabilities{
-			ModelRouter:   p,
-			Executor:      p,
-			ManagementAPI: p,
+			ModelRegistrar: p,
+			ModelRouter:    p,
+			Executor:       p,
+			ManagementAPI:  p,
 		},
 	}
 }

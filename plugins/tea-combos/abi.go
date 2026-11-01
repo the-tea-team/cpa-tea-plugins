@@ -100,6 +100,7 @@ type abiRegistration struct {
 
 type abiCapabilities struct {
 	Scheduler             bool     `json:"scheduler"`
+	ModelRegistrar        bool     `json:"model_registrar"`
 	ModelRouter           bool     `json:"model_router"`
 	Executor              bool     `json:"executor"`
 	ManagementAPI         bool     `json:"management_api"`
@@ -115,6 +116,7 @@ type abiCapabilities struct {
 // CPA silently skips an executor route unless the plugin declares the protocol formats it
 // accepts and emits. Slice A declares only the two capabilities it implements.
 var abiEnabledCapabilities = abiCapabilities{
+	ModelRegistrar:        true,
 	ModelRouter:           true,
 	Executor:              true,
 	ManagementAPI:         true,
@@ -265,6 +267,8 @@ func abiHandleMethod(method string, request []byte) (raw []byte, err error) {
 			Metadata:      plugin.plugin().Metadata,
 			Capabilities:  abiEnabledCapabilities,
 		})
+	case pluginabi.MethodModelRegister:
+		return handleAbiModelRegister(currentPlugin.Load(), request)
 	case pluginabi.MethodModelRoute:
 		plugin := currentPlugin.Load()
 		if plugin == nil {
