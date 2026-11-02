@@ -327,13 +327,34 @@ CPA instance", but behind CPAMP's manager-server proxy that same-origin route is
 the **CPAMP Admin Key**; the CPA Management Key is rejected with 401 there. Served directly by CPA,
 the CPA Management Key is the correct credential.
 
+### home.enabled confirmation
+
 `home.enabled` cannot be set from the v8.0.51 YAML config: `Home` is runtime-only and is turned on
 by `-home-jwt`, which bootstraps mTLS certificates and a config from a reachable Home control plane.
 With a syntactically valid JWT pointing at an unreachable control plane the binary exits with
-`invalid -home-jwt: dial tcp ... connection refused`, so the 404 could not be observed on a running
-instance. The code path is unambiguous: `pluginResourceNoRoute`
+`invalid -home-jwt: dial tcp ... connection refused`.
+
+The 404 was then confirmed on the real binary by running a stand-in Home control plane (scratch-only,
+not shipped with the plugin). It answered the JWT's mTLS certificate bootstrap (plaintext RESP
+`CERTIFICATE REQUEST`, signing the CSR against the `ca_fingerprint` in the JWT) and the control-plane
+RESP commands `GET config`, `GET plugin-sync` and `RPUSH plugin-status`, serving a config with
+`plugins.enabled: true`, `plugins.dir` and the same `tea-combos.so`. The binary was started with
+`-home-jwt <jwt> -home-disable-cluster-discovery`; its log shows `pluginhost: plugin loaded
+plugin_id=tea-combos`, `plugin registered` and `Starting API server on 127.0.0.1:18391`.
+
+- Home mode, unauthenticated `GET /v0/resource/plugins/tea-combos/combos` -> **HTTP 404**, empty body
+  (`Content-Length: 0`).
+- Control run, same binary and same `.so`, normal YAML config (Home off) -> **HTTP 200**, the 21,516-byte
+  resource shell.
+- Home mode also returns **HTTP 404** for `GET /v0/management/plugins` even with the correct management
+  key; `managementAvailable` (`internal/api/server_management.go:219`) gates that route on Home too.
+  The same request is 200 in the control run.
+
+The code path matches the observation: `pluginResourceNoRoute`
 (`internal/api/server_management.go:293`) aborts with 404 when `cfg.Home.Enabled` is true, before
-dispatching to the plugin. The plugin does not work around this.
+dispatching to the plugin. The plugin does not work around this; set home mode off to use the page.
+Logs, the stand-in source and the request/response transcripts are under
+`/root/jethur/_work/tea-combos/slice-h/`.
 
 ### Open questions
 
