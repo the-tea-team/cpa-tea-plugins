@@ -1,4 +1,21 @@
 {
   "schema_version": 1,
-  "plugins": []
+  "plugins": [
+    {
+      "id": "tea-combos",
+      "name": "Tea Combos",
+      "description": "Named model combos with round-robin and failover across providers, executed through CPA's own provider path.",
+      "author": "The Tea Team",
+      "version": "0.1.0",
+      "repository": "https://github.com/the-tea-team/cpa-tea-plugins",
+      "homepage": "https://github.com/the-tea-team/cpa-tea-plugins",
+      "license": "MIT",
+      "tags": [
+        "routing",
+        "models",
+        "failover",
+        "round-robin"
+      ]
+    }
+  ]
 }
