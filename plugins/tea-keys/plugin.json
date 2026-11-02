@@ -1,0 +1,14 @@
+{
+  "id": "tea-keys",
+  "name": "Tea Keys",
+  "description": "Per-API-key model allowlists for CLIProxyAPI, enforced on requests and on /v1/models listings.",
+  "author": "The Tea Team",
+  "version": "0.1.0",
+  "license": "MIT",
+  "tags": [
+    "auth",
+    "keys",
+    "models",
+    "security"
+  ]
+}
