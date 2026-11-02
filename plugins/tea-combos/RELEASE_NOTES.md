@@ -42,11 +42,11 @@
 ## Known non-blocking issues
 - C24 listing lags UI edits until the next config reload (see C24-R).
 - Behind CPA-Manager-Plus the editor page needs the CPAMP Admin Key, not the CPA management key (CPAMP proxies and gates the route). The page text now says so.
-- `home.enabled: true` makes CPA return 404 for every plugin resource page (`internal/api/server_management.go:293`); the sidebar entry cannot load then. Not reproducible here: v8.0.51 enables home only through `-home-jwt` and needs a reachable home endpoint. Documented, not worked around.
+- `home.enabled: true` makes CPA return 404 for plugin resource pages; see the next item for the real-binary confirmation.
 - A CPA 503 cooldown on a member can hide that member from routing before the request reaches the upstream; this is core behaviour.
 - Binding persistence is write-behind (~2 s). A graceful CPA stop flushes it; a SIGKILL can lose up to that window.
 - N1 (UI, minor, from QA): a 128-character combo name widens the combos table past its container, so Strategy, Members and Actions are clipped. Names up to 128 characters are valid; the table does not wrap them.
 - Noted (core, not this change): a few wrong management keys from one IP trigger CPA's own IP ban (403) that clears after about a minute.
 - A combo with an empty member list can be saved (201); requests for it fail with `unknown provider for model` because the router does not claim it. Not a listed requirement.
 - After a member returns 503, CPA's own cooldown can steer new round-robin conversations away from it for about two minutes (observed by the G5 audit; core behaviour).
-- Pending: R16 `home.enabled` confirmation on a running binary (see below).
+- In CPA home mode (`-home-jwt`) the plugin page AND `/v0/management/plugins` return 404 (`internal/api/server_management.go:219,293`). Confirmed on the real v8.0.51 binary with a stand-in home control plane (README "home.enabled confirmation"); home off returns 200 for the same plugin. Not worked around.
