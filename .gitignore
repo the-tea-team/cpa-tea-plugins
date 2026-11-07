@@ -23,3 +23,6 @@ auths/
 .DS_Store
 .idea/
 .vscode/
+
+# Plugin-owned runtime state
+**/tea-combos.state.json
