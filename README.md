@@ -34,12 +34,15 @@ CPA-Manager-Plus and EasyCLIProxyAPI.
 
 ## Status
 
-Scaffold only. No plugins have been published yet; `registry.json` is intentionally empty.
+One plugin is published:
 
-Planned first plugins (not started):
+| Plugin | Purpose |
+|---|---|
+| `tea-keys` | Per-API-key model allowlists, enforced on requests and on `/v1/models` listings |
+
+Planned next:
 
 | Plugin | Purpose |
 |---|---|
 | `tea-combos` | Named model combos with ordered fallback across providers/models |
 | `tea-quota-router` | Quota-aware round-robin credential selection |
-| `tea-keys` | Named client keys with per-key rules (model allowlists, combo binding, limits) |
