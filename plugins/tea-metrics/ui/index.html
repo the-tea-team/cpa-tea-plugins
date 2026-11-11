@@ -1,0 +1,134 @@
+<!doctype html><html><head><meta charset="utf-8"><title>tea-metrics · gateway health</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0b0d14;--side:#07080d;--card:#11141c;--raise:#1a1e28;--hair:rgba(238,240,245,.08);--t1:#eef0f5;--t2:#a3a9b8;--t3:#7a8296;--acc:#7fb0ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--t1);display:grid;grid-template-columns:264px 1fr;font-size:13px;font-variant-numeric:tabular-nums;min-height:100vh}
+aside{background:var(--side);border-right:1px solid var(--hair);padding:24px 16px;overflow:auto}
+aside h1{font-size:14px;font-weight:500;letter-spacing:.2px;margin-bottom:4px}
+aside .sub{color:var(--t3);font-size:11px;margin-bottom:24px}
+.grp{margin-bottom:20px}
+.gh{display:flex;align-items:center;gap:8px;color:var(--t2);font-size:12px;padding:0 8px 8px}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot.g{background:var(--ok)}.dot.y{background:var(--warn)}.dot.r{background:var(--bad)}
+.mrow{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:6px;cursor:pointer;user-select:none}
+.mrow:hover{background:var(--raise)}
+.mrow input{accent-color:var(--acc)}
+.nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.tp{color:var(--t3);font-size:11px}
+main{padding:24px 32px;overflow:auto;max-width:1500px}
+.top{display:flex;align-items:center;gap:16px;margin-bottom:24px;flex-wrap:wrap}
+.top h2{font-size:16px;font-weight:500}
+.st{color:var(--t3);font-size:11px}
+.ranges{margin-left:auto;display:flex;gap:2px;background:var(--side);border:1px solid var(--hair);border-radius:6px;padding:2px}
+.ranges button{background:none;border:none;color:var(--t3);padding:5px 12px;cursor:pointer;font:inherit;border-radius:4px}
+.ranges button.on{background:none;color:var(--acc);font-weight:500}
+.card{background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:20px 24px;margin-bottom:16px}
+#chart{width:100%;height:320px;display:block}
+.axis{stroke:var(--hair);stroke-width:1}.lbl{fill:var(--t3);font-size:10px;font-family:ui-monospace,Menlo,Consolas,monospace}
+table{width:100%;border-collapse:collapse}
+th{color:var(--t3);font-weight:400;text-align:right;padding:8px;border-bottom:1px solid var(--hair);font-size:11px}
+td{padding:8px;border-bottom:1px solid var(--hair);text-align:right;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+th:first-child,td:first-child{text-align:left;font-family:inherit}
+tr:hover td{background:var(--raise)}
+.mname{display:flex;align-items:center;gap:8px}
+.g{color:var(--ok)}.y{color:var(--warn);font-weight:600}.r{color:var(--bad);font-weight:600}
+.hint{color:var(--t3);font-size:11px;margin:12px 0 0}
+.keybar{display:none;background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:16px 20px;margin-bottom:16px;gap:8px;align-items:center}
+.keybar.show{display:flex}
+.keybar input{flex:1;background:var(--side);border:1px solid var(--hair);border-radius:6px;color:var(--t1);padding:7px 10px;font:inherit}
+.keybar button{background:var(--raise);color:var(--t1);border:1px solid var(--hair);border-radius:6px;padding:7px 14px;cursor:pointer;font:inherit}
+.keybar .msg{color:var(--t3);font-size:12px}
+.err{color:var(--bad);font-size:12px}
+</style></head><body>
+<aside><h1>tea-metrics</h1><div class="sub" id="railsub">connecting…</div><div id="legend"></div></aside>
+<main>
+ <div class="top"><h2>Generation speed by hour</h2><span class="st" id="stamp"></span>
+ <div class="ranges"><button data-r="24h" class="on">24h</button><button data-r="7d">7d</button><button data-r="30d">30d</button></div></div>
+ <div class="keybar" id="keybar">
+  <span class="msg">Management key</span>
+  <input id="keyin" type="password" placeholder="bearer key, kept in this browser only">
+  <button id="keysave">Save</button><span class="err" id="keyerr"></span>
+ </div>
+ <div class="card"><svg id="chart" viewBox="0 0 940 320" preserveAspectRatio="none"></svg></div>
+ <div class="card"><table id="tbl"></table>
+ <div class="hint">slow = p10 of decode speed (the tail you can rely on) · prefill is “—” when cache hit ≈ 100% and is an estimate (ttft includes queue) · reqs = sample size in window</div></div>
+</main>
+<script>
+var API="/v0/management/plugins/tea-metrics/summary",KEY="tea-metrics.management-key";
+var range="24h",data=null,hidden={},lastFetch=0,timer=null;
+function getKey(){try{return localStorage.getItem(KEY)||""}catch(e){return""}}
+function setKey(k){try{k?localStorage.setItem(KEY,k):localStorage.removeItem(KEY)}catch(e){}}
+var PALETTE=["#5fb876","#4fa3e8","#e8a54f","#3fbfae","#b48cf2","#e07171","#7fb0ff","#d8a04f"];
+function color(i){return PALETTE[i%PALETTE.length]}
+function health(m){if(m.e429>0||m.ok_pct<99)return"r";if(m.ok_pct<99.9||(m.cache_pct>0&&m.cache_pct<90))return"y";return"g"}
+function fmtTs(b,win){var d=new Date(b*1000);if(win==="24h")return d.getHours()+"h";return(d.getMonth()+1)+"/"+d.getDate()}
+function render(){if(!data)return;
+ var ms=data.models.filter(function(m){return m.reqs>0}),i;
+ var colors={};ms.forEach(function(m,i){colors[m.model]=color(i)});
+ var byP={};ms.forEach(function(m){(byP[m.provider||"?"]=byP[m.provider||"?"]=byP[m.provider||"?"]||[]).push(m)});
+ var leg=document.getElementById("legend"),html="";
+ Object.keys(byP).forEach(function(p){
+  var worst="g";byP[p].forEach(function(m){var h=health(m);if(h==="r")worst="r";else if(h==="y"&&worst!=="r")worst="y"});
+  html+='<div class="grp"><div class="gh"><span class="dot '+worst+'"></span>'+p+'</div>';
+  byP[p].forEach(function(m){var on=!hidden[m.model];
+   html+='<label class="mrow"><input type="checkbox" '+(on?"checked":"")+' data-m="'+m.model+'"><span class="dot" style="background:'+colors[m.model]+'"></span><span class="nm" title="'+m.model+'">'+m.model+'</span><span class="tp">'+Math.round(m.decode_p50)+'</span></label>'});
+  html+='</div>'});
+ leg.innerHTML=html;
+ leg.querySelectorAll("input").forEach(function(c){c.onchange=function(){hidden[c.dataset.m]=!c.checked;render()}});
+ chart(ms,colors);table(ms,colors);
+ document.getElementById("railsub").textContent="live · "+ms.length+" models · "+range;
+ tick()}
+function chart(ms,colors){var W=940,H=320,P=40,R=76;
+ var pts=[],mx=0,minB=Infinity,maxB=0;
+ ms.forEach(function(m){if(hidden[m.model])return;(m.series||[]).forEach(function(s){pts.push({m:m.model,c:colors[m.model],b:s.b,v:s.v});mx=Math.max(mx,s.v);minB=Math.min(minB,s.b);maxB=Math.max(maxB,s.b)})});
+ if(!pts.length){document.getElementById("chart").innerHTML='<text x="470" y="160" class="lbl" text-anchor="middle">no samples in window</text>';return}
+ if(minB===maxB)maxB=minB+1;
+ var nice=Math.ceil(mx/100)*100,g="";
+ for(var y=0;y<=4;y++){var yy=H-32-(y/4)*(H-64);
+  g+='<line x1="'+P+'" y1="'+yy+'" x2="'+(W-R)+'" y2="'+yy+'" class="axis"/><text x="8" y="'+(yy+3)+'" class="lbl">'+Math.round(nice*y/4)+'</text>'}
+ var byM={};pts.forEach(function(p){(byM[p.m]=byM[p.m]||[]).push(p)});
+ var ends=[];
+ Object.keys(byM).forEach(function(name){var arr=byM[name].sort(function(a,b){return a.b-b.b});
+  var d=arr.map(function(p){return (P+(p.b-minB)/(maxB-minB)*(W-P-R)).toFixed(1)+","+(H-32-(p.v/nice)*(H-64)).toFixed(1)}).join(" ");
+  g+='<polyline points="'+d+'" fill="none" stroke="'+arr[0].c+'" stroke-width="1.5" stroke-linejoin="round" opacity=".9"/>';
+  ends.push({y:H-32-(arr[arr.length-1].v/nice)*(H-64),c:arr[0].c,t:name.length>15?name.slice(0,14)+"…":name})});
+ ends.sort(function(a,b){return a.y-b.y});
+ for(var e=1;e<ends.length;e++)if(ends[e].y-ends[e-1].y<13)ends[e].y=ends[e-1].y+13;
+ ends.forEach(function(o){g+='<text x="'+(W-R+8)+'" y="'+(o.y+3)+'" class="lbl" fill="'+o.c+'" style="font-size:9.5px">'+o.t+'</text>'});
+ var ticks=Math.min(6,maxB-minB>0?6:1);
+ for(var x=0;x<=ticks;x++){var bb=minB+(maxB-minB)*x/ticks,xx=P+(bb-minB)/(maxB-minB)*(W-P-R);
+  g+='<text x="'+xx+'" y="'+(H-12)+'" class="lbl" text-anchor="middle">'+fmtTs(bb,range)+'</text>'}
+ document.getElementById("chart").innerHTML=g}
+function table(ms,colors){var head='<tr><th>model</th><th>reqs</th><th>ok</th><th>tok/s p50</th><th>slow p10</th><th>ttft p50</th><th>ttft p90</th><th>prefill t/s</th><th>cache</th><th>429</th></tr>';
+ var rows=ms.filter(function(m){return!hidden[m.model]}).map(function(m){
+  return '<tr><td><span class="mname"><span class="dot '+health(m)+'"></span>'+m.model+'</span></td>'+
+   '<td>'+m.reqs.toLocaleString()+'</td>'+
+   '<td class="'+(m.ok_pct>=99.9?"g":m.ok_pct>=99?"y":"r")+'">'+m.ok_pct.toFixed(1)+'%</td>'+
+   '<td><b>'+Math.round(m.decode_p50)+'</b></td><td>'+Math.round(m.decode_p10)+'</td>'+
+   '<td>'+(m.ttft_p50_ms?(m.ttft_p50_ms/1000).toFixed(2)+"s":"—")+'</td>'+
+   '<td>'+(m.ttft_p90_ms?(m.ttft_p90_ms/1000).toFixed(2)+"s":"—")+'</td>'+
+   '<td>'+(m.prefill_tps!=null?Math.round(m.prefill_tps).toLocaleString():"—")+'</td>'+
+   '<td class="'+(m.cache_pct>=95?"g":m.cache_pct>=85?"y":m.cache_pct>0?"r":"")+'">'+(m.cache_pct>0?m.cache_pct.toFixed(1)+"%":"—")+'</td>'+
+   '<td class="'+(m.e429>0?"y":"")+'">'+m.e429+'</td></tr>'}).join("");
+ document.getElementById("tbl").innerHTML=head+rows}
+function tick(){if(!lastFetch)return;
+ document.getElementById("stamp").textContent="updated "+Math.max(0,Math.round((Date.now()-lastFetch)/1000))+"s ago"+(data&&data.dropped?" · "+data.dropped+" dropped":"")}
+setInterval(tick,1000);
+function load(){var k=getKey();
+ if(!k){showKey("");return}
+ fetch(API+"?window="+range,{headers:{"Authorization":"Bearer "+k}}).then(function(r){
+  if(r.status===401||r.status===403){showKey(r.status===403?"banned or wrong key":"wrong key");return}
+  if(!r.ok)return r.text().then(function(t){showKey("HTTP "+r.status+": "+t.slice(0,80))})
+  return r.json().then(function(j){data=j;lastFetch=Date.now();hideKey();render()})
+ }).catch(function(e){showKey("fetch failed: "+e)})}
+function showKey(msg){document.getElementById("keybar").classList.add("show");
+ document.getElementById("keyerr").textContent=msg||""}
+function hideKey(){document.getElementById("keybar").classList.remove("show")}
+document.getElementById("keysave").onclick=function(){var v=document.getElementById("keyin").value.trim();
+ if(v){setKey(v);load()}};
+document.getElementById("keyin").addEventListener("keydown",function(e){if(e.key==="Enter")document.getElementById("keysave").click()});
+document.querySelectorAll(".ranges button").forEach(function(b){b.onclick=function(){range=b.dataset.r;
+ document.querySelectorAll(".ranges button").forEach(function(x){x.classList.toggle("on",x===b)});load()}});
+load();clearInterval(timer);timer=setInterval(load,60000);
+</script></body></html>
