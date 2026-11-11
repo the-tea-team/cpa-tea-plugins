@@ -1,0 +1,9 @@
+{
+  "id": "tea-metrics",
+  "name": "tea-metrics",
+  "description": "Model and provider health: decode and prefill speed, TTFT, cache hit rate and failures from an in-process usage tap",
+  "author": "The Tea Team",
+  "version": "0.1.0",
+  "license": "MIT",
+  "tags": ["metrics", "observability", "dashboard"]
+}
