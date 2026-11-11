@@ -79,10 +79,11 @@ type abiError struct {
 }
 
 // abiEnabledCapabilities declares which host interfaces this plugin serves.
-// A plugin with no capabilities is rejected by CPA at registration, so the scaffold ships a
-// no-op scheduler that always defers to CPA's built-in schedulers. Replace it with your own.
+// This is the truth the host sees; the pluginapi.Capabilities struct in buildPlugin is
+// documentation for the Go side only.
 var abiEnabledCapabilities = abiCapabilities{
-	Scheduler: true,
+	ManagementAPI: true,
+	UsagePlugin:   true,
 }
 
 func main() {}
@@ -150,14 +151,15 @@ func abiHandleMethod(method string, request []byte) ([]byte, error) {
 			Metadata:      plugin.Metadata,
 			Capabilities:  abiEnabledCapabilities,
 		})
-	case pluginabi.MethodSchedulerPick:
-		// No-op: Handled=false hands the request back to CPA's built-in schedulers.
-		return abiOKEnvelope(pluginapi.SchedulerPickResponse{Handled: false})
+	case pluginabi.MethodManagementRegister:
+		return handleManagementRegister(request)
+	case pluginabi.MethodManagementHandle:
+		return handleManagementCall(request)
+	case pluginabi.MethodUsageHandle:
+		return handleUsageHandle(request)
 	case pluginabi.MethodPluginShutdown:
 		return abiOKEnvelope(map[string]any{})
 	default:
-		// TODO: handle the methods for the capabilities you enabled, e.g.
-		// pluginabi.MethodModelRoute, pluginabi.MethodManagementRegister.
 		return abiErrorEnvelope("unknown_method", "unknown method: "+method), nil
 	}
 }

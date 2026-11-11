@@ -66,6 +66,16 @@ func (pageHandler) HandleManagement(_ context.Context, req pluginapi.ManagementR
 	}, nil
 }
 
+// handleManagementRequest dispatches a host-forwarded request to the right handler. The host
+// only forwards paths that match declared routes; matching defensively keeps working if a host
+// forwards a prefix or a legacy menu path.
+func (p *tea_metricsPlugin) handleManagementRequest(ctx context.Context, req pluginapi.ManagementRequest) (pluginapi.ManagementResponse, error) {
+	if strings.Contains(req.Path, summaryPathSuffix) {
+		return summaryHandler{store: p.store}.HandleManagement(ctx, req)
+	}
+	return pageHandler{}.HandleManagement(ctx, req)
+}
+
 func jsonResp(status int, v any) (pluginapi.ManagementResponse, error) {
 	body, err := json.Marshal(v)
 	if err != nil {

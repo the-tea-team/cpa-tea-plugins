@@ -2,8 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -13,6 +16,8 @@ import (
 )
 
 const chanCapacity = 8192
+
+var errNoPlugin = errors.New("tea-metrics: plugin not initialized")
 
 type sample struct {
 	ts        int64
@@ -28,9 +33,12 @@ type Store struct {
 	db        *sql.DB
 	ch        chan pluginapi.UsageRecord
 	retention time.Duration
+	dataDir   string
 	dropped   atomic.Int64
 	stop      chan struct{}
 	done      chan struct{}
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func openStore(path string, retention time.Duration) (*Store, error) {
@@ -60,6 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);`); err != nil {
 		db:        db,
 		ch:        make(chan pluginapi.UsageRecord, chanCapacity),
 		retention: retention,
+		dataDir:   filepath.Dir(path),
 		stop:      make(chan struct{}),
 		done:      make(chan struct{}),
 	}, nil
@@ -151,7 +160,7 @@ func b2i(b bool) int {
 	return 0
 }
 
-func (s *Store) pruneLoop(stop <-chan struct{}) {
+func (s *Store) pruneLoop() {
 	prune := func() {
 		cut := time.Now().Add(-s.retention).UnixMilli()
 		res, err := s.db.Exec(`DELETE FROM events WHERE ts < ?`, cut)
@@ -173,17 +182,20 @@ func (s *Store) pruneLoop(stop <-chan struct{}) {
 		select {
 		case <-t.C:
 			prune()
-		case <-stop:
+		case <-s.stop:
 			return
 		}
 	}
 }
 
 func (s *Store) close() error {
-	// drain the channel first: writer flushes its tail batch on stop
-	select {
-	case <-s.done:
-	case <-time.After(5 * time.Second):
-	}
-	return s.db.Close()
+	s.closeOnce.Do(func() {
+		close(s.stop)
+		select {
+		case <-s.done:
+		case <-time.After(5 * time.Second):
+		}
+		s.closeErr = s.db.Close()
+	})
+	return s.closeErr
 }

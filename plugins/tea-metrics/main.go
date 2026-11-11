@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -30,8 +30,24 @@ type tea_metricsPlugin struct {
 	configYAML []byte
 	pluginDir  string
 	store      *Store
-	stop       chan struct{}
-	closed     atomic.Bool
+}
+
+var (
+	// The host may call plugin.register and plugin.reconfigure repeatedly, and the ABI has
+	// no per-instance state, so the store is a process singleton and the latest instance
+	// is what capability methods dispatch against.
+	current   sync.Map // any single slot via pointer swap below
+	storeOnce sync.Once
+	sharedSt  *Store
+	storeErr  error
+)
+
+func setCurrent(p *tea_metricsPlugin) { current.Store("p", p) }
+
+func getCurrent() *tea_metricsPlugin {
+	v, _ := current.Load("p")
+	p, _ := v.(*tea_metricsPlugin)
+	return p
 }
 
 func buildPlugin(configYAML []byte, pluginDir string) (pluginapi.Plugin, error) {
@@ -44,26 +60,35 @@ func buildPlugin(configYAML []byte, pluginDir string) (pluginapi.Plugin, error) 
 	if cfg.RetentionDays <= 0 {
 		cfg.RetentionDays = defaultRetentionDays
 	}
-	dir, err := resolveDataDir(cfg.DataDir, pluginDir)
-	if err != nil {
-		return pluginapi.Plugin{}, err
+	storeOnce.Do(func() {
+		dir, err := resolveDataDir(cfg.DataDir, pluginDir)
+		if err != nil {
+			storeErr = err
+			return
+		}
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			storeErr = fmt.Errorf("tea-metrics: create data dir: %w", err)
+			return
+		}
+		sharedSt, storeErr = openStore(filepath.Join(dir, "tea-metrics.db"), time.Duration(cfg.RetentionDays)*24*time.Hour)
+		if storeErr == nil {
+			sharedSt.startWriter()
+			go sharedSt.pruneLoop()
+			log.Printf("tea-metrics: store ready at %s (retention %dd)", filepath.Join(dir, "tea-metrics.db"), cfg.RetentionDays)
+		}
+	})
+	if storeErr != nil {
+		return pluginapi.Plugin{}, storeErr
 	}
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return pluginapi.Plugin{}, fmt.Errorf("tea-metrics: create data dir: %w", err)
-	}
-	store, err := openStore(filepath.Join(dir, "tea-metrics.db"), time.Duration(cfg.RetentionDays)*24*time.Hour)
-	if err != nil {
-		return pluginapi.Plugin{}, err
+	if cfg.DataDir != "" && sharedSt.dataDir != cfg.DataDir {
+		log.Printf("tea-metrics: dataDir changed to %q; takes effect on restart", cfg.DataDir)
 	}
 	p := &tea_metricsPlugin{
 		configYAML: append([]byte(nil), configYAML...),
 		pluginDir:  pluginDir,
-		store:      store,
-		stop:       make(chan struct{}),
+		store:      sharedSt,
 	}
-	store.startWriter()
-	go store.pruneLoop(p.stop)
-	log.Printf("tea-metrics: store ready at %s (retention %dd)", filepath.Join(dir, "tea-metrics.db"), cfg.RetentionDays)
+	setCurrent(p)
 
 	return pluginapi.Plugin{
 		Metadata: pluginapi.Metadata{
@@ -72,7 +97,7 @@ func buildPlugin(configYAML []byte, pluginDir string) (pluginapi.Plugin, error) 
 			Author:           "The Tea Team",
 			GitHubRepository: "https://github.com/the-tea-team/cpa-tea-plugins",
 			ConfigFields: []pluginapi.ConfigField{
-				{Name: "dataDir", Type: "string", Description: "Directory for tea-metrics.db (default: plugin data directory)"},
+				{Name: "dataDir", Type: "string", Description: "Directory for tea-metrics.db (required; the host passes no plugin dir)"},
 				{Name: "retentionDays", Type: "number", Description: "Days of per-request samples to keep (default 30)"},
 			},
 		},
@@ -84,7 +109,7 @@ func buildPlugin(configYAML []byte, pluginDir string) (pluginapi.Plugin, error) 
 }
 
 // resolveDataDir prefers an explicit dataDir; otherwise uses the plugin dir unless it looks
-// ephemeral (same guard tea-combos learned the hard way on v8.0.51).
+// ephemeral (the host passes "" on 8.0.62, so in practice dataDir must be configured).
 func resolveDataDir(configured, pluginDir string) (string, error) {
 	if d := strings.TrimSpace(configured); d != "" {
 		return d, nil
@@ -107,14 +132,13 @@ func (p *tea_metricsPlugin) HandleUsage(_ context.Context, rec pluginapi.UsageRe
 }
 
 func (p *tea_metricsPlugin) Reconfigure(configYAML []byte) error {
-	p.configYAML = append([]byte(nil), configYAML...)
-	return nil
+	_, err := buildPlugin(configYAML, p.pluginDir)
+	return err
 }
 
 func (p *tea_metricsPlugin) Shutdown() error {
-	if p.closed.CompareAndSwap(false, true) {
-		close(p.stop)
-		return p.store.close()
+	if sharedSt != nil {
+		return sharedSt.close()
 	}
 	return nil
 }
