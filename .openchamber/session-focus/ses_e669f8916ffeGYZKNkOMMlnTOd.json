@@ -1,0 +1,61 @@
+{
+  "version": 2,
+  "sessionId": "ses_e669f8916ffeGYZKNkOMMlnTOd",
+  "revision": 19,
+  "focus": "Implement C14 streaming ExecuteStream for tea-combos with pre-first-byte fallback, tests, and real-CPA proof",
+  "lifecycle": "done",
+  "status": {
+    "state": "done",
+    "detail": "C14 implemented, tested, proven on real CPA",
+    "since": 1793574900360
+  },
+  "actions": [
+    {
+      "id": "a1",
+      "text": "Read brief, contract, spike findings, slice A code, CPA streaming contracts",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574600991,
+      "startedAt": 1793574601965,
+      "completedAt": 1793574900352
+    },
+    {
+      "id": "a2",
+      "text": "Implement stream.go + abi_stream.go + minimal abi.go/main.go wiring",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574600993,
+      "startedAt": 1793574900353,
+      "completedAt": 1793574900354
+    },
+    {
+      "id": "a3",
+      "text": "Write table-driven stream tests against fake host seam",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574600994,
+      "startedAt": 1793574900355,
+      "completedAt": 1793574900355
+    },
+    {
+      "id": "a4",
+      "text": "Extend mock upstream and prove against real CPA v8.0.51",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574600995,
+      "startedAt": 1793574900356,
+      "completedAt": 1793574900357
+    },
+    {
+      "id": "a5",
+      "text": "README Streaming section, run scoped checks + scripts/check.sh, report",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574600996,
+      "startedAt": 1793574900358,
+      "completedAt": 1793574900359
+    }
+  ],
+  "updatedAt": 1793574900361,
+  "updatedBy": "agent"
+}

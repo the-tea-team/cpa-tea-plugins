@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "sessionId": "ses_e668f897bffeAQfFvQHRk0U2WM",
+  "revision": 7,
+  "focus": "Deliver C24 for tea-combos: publish enabled combos in /v1/models through the host ModelRegistrar capability and prove registration, routing and refresh behaviour on real CPA v8.0.51.",
+  "lifecycle": "active",
+  "status": {
+    "state": "implementing",
+    "detail": "writing models.go and abi_models.go",
+    "since": 1793575778176
+  },
+  "actions": [
+    {
+      "id": "a1",
+      "text": "Add ModelRegistrar capability + model.register ABI handler and combo model list (models.go, abi_models.go)",
+      "state": "todo",
+      "refs": [],
+      "createdAt": 1793575778171
+    },
+    {
+      "id": "a2",
+      "text": "Add table-driven tests for listing, ABI envelope, capability flag, nil store and collisions",
+      "state": "todo",
+      "refs": [],
+      "createdAt": 1793575778172
+    },
+    {
+      "id": "a3",
+      "text": "Run scoped checks and scripts/check.sh",
+      "state": "todo",
+      "refs": [],
+      "createdAt": 1793575778174
+    },
+    {
+      "id": "a4",
+      "text": "Build base and change .so and prove before/after /v1/models, routing and refresh triggers on real CPA",
+      "state": "todo",
+      "refs": [],
+      "createdAt": 1793575778174
+    },
+    {
+      "id": "a5",
+      "text": "Add README 'Model listing' section, commit, verify base unmoved",
+      "state": "todo",
+      "refs": [],
+      "createdAt": 1793575778175
+    }
+  ],
+  "updatedAt": 1793575778176,
+  "updatedBy": "agent"
+}

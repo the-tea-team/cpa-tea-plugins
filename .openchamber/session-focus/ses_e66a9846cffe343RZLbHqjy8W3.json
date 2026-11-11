@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "sessionId": "ses_e66a9846cffe343RZLbHqjy8W3",
+  "revision": 4,
+  "focus": "Deliver tea-combos slice A (C1-C10 + C18 subset): plugin with router+executor, state store, selectors, tests in /var/tmp/opencode/tea-combos/wt.",
+  "lifecycle": "done",
+  "status": {
+    "state": "done",
+    "detail": "slice A committed fbc1ce0; checks and real-CPA E2E passed",
+    "since": 1793574485915
+  },
+  "actions": [],
+  "updatedAt": 1793574485917,
+  "updatedBy": "agent"
+}

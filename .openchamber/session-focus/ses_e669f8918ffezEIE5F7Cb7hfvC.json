@@ -1,0 +1,61 @@
+{
+  "version": 2,
+  "sessionId": "ses_e669f8918ffezEIE5F7Cb7hfvC",
+  "revision": 16,
+  "focus": "Implement tea-combos slice B: session identity + affinity in the non-stream executor, persisted and tested",
+  "lifecycle": "done",
+  "status": {
+    "state": "done",
+    "detail": "rebased onto b3c2cc0; all checks pass; worktree kept",
+    "since": 1793575106737
+  },
+  "actions": [
+    {
+      "id": "a1",
+      "text": "Read contract docs and CPA session/executor sources to settle C13",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574601658,
+      "startedAt": 1793574709891,
+      "completedAt": 1793574709891
+    },
+    {
+      "id": "a2",
+      "text": "Implement session.go (key derivation) + affinity.go (LRU/TTL/binding) + store_bindings.go",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574601659,
+      "startedAt": 1793574709892,
+      "completedAt": 1793575106733
+    },
+    {
+      "id": "a3",
+      "text": "Wire affinity into executeCombo non-stream path",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574601660,
+      "startedAt": 1793575106735,
+      "completedAt": 1793575106735
+    },
+    {
+      "id": "a4",
+      "text": "Tests: stickiness, TTL, rebind, LRU, persistence, derivation precedence",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574601661,
+      "startedAt": 1793575106736,
+      "completedAt": 1793575106736
+    },
+    {
+      "id": "a5",
+      "text": "README sections + scoped checks + scripts/check.sh",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574601662,
+      "startedAt": 1793575106736,
+      "completedAt": 1793575106736
+    }
+  ],
+  "updatedAt": 1793575106737,
+  "updatedBy": "agent"
+}

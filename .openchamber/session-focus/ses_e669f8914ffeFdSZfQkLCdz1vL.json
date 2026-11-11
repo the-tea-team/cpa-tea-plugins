@@ -1,0 +1,61 @@
+{
+  "version": 2,
+  "sessionId": "ses_e669f8914ffeFdSZfQkLCdz1vL",
+  "revision": 15,
+  "focus": "Shipped tea-combos slice D: ManagementAPI CRUD, static resource shell, logo, in-page editor, tests and real-CPA/browser proof",
+  "lifecycle": "done",
+  "status": {
+    "state": "done",
+    "detail": "",
+    "since": 1793575094384
+  },
+  "actions": [
+    {
+      "id": "a1",
+      "text": "Implement management.go/ui.go/ui/index.html/abi_management.go and wire main.go+abi.go",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574700242,
+      "startedAt": 1793574702394,
+      "completedAt": 1793575094379
+    },
+    {
+      "id": "a2",
+      "text": "Write handler, ABI and static-shell tests; run scoped checks",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574700244,
+      "startedAt": 1793575094381,
+      "completedAt": 1793575094381
+    },
+    {
+      "id": "a3",
+      "text": "Run real CPA 18351 + mock upstream; curl evidence for routes/CRUD/routing",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574700245,
+      "startedAt": 1793575094382,
+      "completedAt": 1793575094382
+    },
+    {
+      "id": "a4",
+      "text": "Browser proof with playwright; screenshots incl. RTL and error state",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574700246,
+      "startedAt": 1793575094383,
+      "completedAt": 1793575094383
+    },
+    {
+      "id": "a5",
+      "text": "README section, provenance report, commit",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574700247,
+      "startedAt": 1793575094383,
+      "completedAt": 1793575094383
+    }
+  ],
+  "updatedAt": 1793575094385,
+  "updatedBy": "agent"
+}

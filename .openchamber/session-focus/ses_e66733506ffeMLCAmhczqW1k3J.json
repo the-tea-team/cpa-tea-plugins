@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "sessionId": "ses_e66733506ffeMLCAmhczqW1k3J",
+  "revision": 6,
+  "focus": "Confirm on a running CPA that pluginResourceNoRoute 404s with Home enabled, and document it in tea-combos README",
+  "lifecycle": "done",
+  "status": {
+    "state": "done",
+    "detail": "Confirmed on the real binary and documented in the README",
+    "since": 1793577712907
+  },
+  "actions": [
+    {
+      "id": "a1",
+      "text": "Create worktree feat/tea-combos-h from origin/feat/tea-combos",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793577506780,
+      "startedAt": 1793577712905,
+      "completedAt": 1793577712905
+    }
+  ],
+  "updatedAt": 1793577712908,
+  "updatedBy": "agent"
+}

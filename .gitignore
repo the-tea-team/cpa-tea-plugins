@@ -26,3 +26,4 @@ auths/
 
 # Plugin-owned runtime state
 **/tea-combos.state.json
+plugins/*/tea-metrics

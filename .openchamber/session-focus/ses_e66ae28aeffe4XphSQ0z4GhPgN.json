@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "sessionId": "ses_e66ae28aeffe4XphSQ0z4GhPgN",
+  "revision": 26,
+  "focus": "Implement docs/briefs/tea-combos.md (tea-combos CPA plugin) via frozen spec, worker slices, and gates",
+  "lifecycle": "active",
+  "status": {
+    "state": "waiting-decision",
+    "detail": "G5 clean 25/25. Only C24-R (UNSIGNED) blocks merge; then Kareem's merge approval.",
+    "since": 1793578225445
+  },
+  "actions": [
+    {
+      "id": "a6",
+      "text": "Slice G: C24 combos listed in /v1/models (Kareem ruling)",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793575646859,
+      "startedAt": 1793576199437,
+      "completedAt": 1793576199437
+    },
+    {
+      "id": "a5",
+      "text": "Present decisions table to Kareem; await ok D1 / PR instruction",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793575374277,
+      "startedAt": 1793578225442,
+      "completedAt": 1793578225442
+    },
+    {
+      "id": "a1",
+      "text": "Slice A foundation C1-C10 (fbc1ce0, check.sh green)",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574513540,
+      "startedAt": 1793574598374,
+      "completedAt": 1793574598374
+    },
+    {
+      "id": "a2",
+      "text": "Slices B (affinity), C (streaming), D (mgmt API + UI) in parallel",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574513542,
+      "startedAt": 1793574598382,
+      "completedAt": 1793575201711
+    },
+    {
+      "id": "a3",
+      "text": "Slice E: e2e vs real CPA + mock, UI proof, open questions",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574513543,
+      "startedAt": 1793575201715,
+      "completedAt": 1793576625215
+    },
+    {
+      "id": "a4",
+      "text": "Slice F: README, release notes, registry, check.sh; G5 brd-validator",
+      "state": "done",
+      "refs": [],
+      "createdAt": 1793574513544,
+      "startedAt": 1793576625220,
+      "completedAt": 1793577770914
+    }
+  ],
+  "updatedAt": 1793578225445,
+  "updatedBy": "agent"
+}

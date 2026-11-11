@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "sessionId": "ses_e66959990ffe0UIKAMOGQPZtE7",
+  "revision": 1,
+  "focus": "",
+  "lifecycle": "active",
+  "status": {
+    "state": "planning",
+    "detail": "surveying worktree, brief, existing mock/scripts",
+    "since": 1793575252165
+  },
+  "actions": [],
+  "updatedAt": 1793575252165,
+  "updatedBy": "agent"
+}

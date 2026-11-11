@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "sessionId": "ses_e66809bc7ffeNrr4Jw4Mfmc94U",
+  "revision": 2,
+  "focus": "Audit tea-combos preview against canonical BRD: extract requirements, test live via API and UI, report conformance.",
+  "lifecycle": "active",
+  "status": {
+    "state": "testing",
+    "detail": "Probing preview API and UI",
+    "since": 1793576639520
+  },
+  "actions": [],
+  "updatedAt": 1793576639520,
+  "updatedBy": "agent"
+}

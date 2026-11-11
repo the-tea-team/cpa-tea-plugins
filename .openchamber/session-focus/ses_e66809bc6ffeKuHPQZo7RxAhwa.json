@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "sessionId": "ses_e66809bc6ffeKuHPQZo7RxAhwa",
+  "revision": 2,
+  "focus": "Verify tea-combos PR #1 against BRD on live preview (API + UI), report on PR",
+  "lifecycle": "active",
+  "status": {
+    "state": "testing",
+    "detail": "Probing preview API",
+    "since": 1793576632856
+  },
+  "actions": [],
+  "updatedAt": 1793576632856,
+  "updatedBy": "agent"
+}
