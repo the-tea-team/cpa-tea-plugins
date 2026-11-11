@@ -181,10 +181,14 @@ func (s *Store) summary(window string, spec windowSpec) (*summary, error) {
 		if t.reqs > 0 {
 			ms.OKPct = round1(float64(t.reqs-t.failed) / float64(t.reqs) * 100)
 		}
-		if t.inTok > 0 {
-			ms.CachePct = round1(float64(t.cacheRead) / float64(t.inTok) * 100)
-			if ms.CachePct > 0 && ms.CachePct < 100 && t.cacheRead >= t.inTok {
-				ms.CachePct = 100
+		if t.inTok+t.cacheRead > 0 {
+			// provider semantics differ: when cache_read fits inside input tokens the provider
+			// counts cached input inside it (openai/meta style); when it exceeds input the
+			// provider reports uncached input separately (claude style).
+			if t.cacheRead <= t.inTok {
+				ms.CachePct = round1(float64(t.cacheRead) / float64(t.inTok) * 100)
+			} else {
+				ms.CachePct = round1(float64(t.cacheRead) / float64(t.inTok+t.cacheRead) * 100)
 			}
 		}
 		if ss := samples[model]; len(ss) > 0 {

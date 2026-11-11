@@ -62,7 +62,7 @@ function setKey(k){try{k?localStorage.setItem(KEY,k):localStorage.removeItem(KEY
 var PALETTE=["#5fb876","#4fa3e8","#e8a54f","#3fbfae","#b48cf2","#e07171","#7fb0ff","#d8a04f"];
 function color(i){return PALETTE[i%PALETTE.length]}
 function health(m){if(m.e429>0||m.ok_pct<99)return"r";if(m.ok_pct<99.9||(m.cache_pct>0&&m.cache_pct<90))return"y";return"g"}
-function fmtTs(b,win){var d=new Date(b*1000);if(win==="24h")return d.getHours()+"h";return(d.getMonth()+1)+"/"+d.getDate()}
+function fmtTs(b,win){var d=new Date(b*1000);if(win==="24h")return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);return(d.getMonth()+1)+"/"+d.getDate()}
 function render(){if(!data)return;
  var ms=data.models.filter(function(m){return m.reqs>0}),i;
  var colors={};ms.forEach(function(m,i){colors[m.model]=color(i)});
@@ -72,14 +72,14 @@ function render(){if(!data)return;
   var worst="g";byP[p].forEach(function(m){var h=health(m);if(h==="r")worst="r";else if(h==="y"&&worst!=="r")worst="y"});
   html+='<div class="grp"><div class="gh"><span class="dot '+worst+'"></span>'+p+'</div>';
   byP[p].forEach(function(m){var on=!hidden[m.model];
-   html+='<label class="mrow"><input type="checkbox" '+(on?"checked":"")+' data-m="'+m.model+'"><span class="dot" style="background:'+colors[m.model]+'"></span><span class="nm" title="'+m.model+'">'+m.model+'</span><span class="tp">'+Math.round(m.decode_p50)+'</span></label>'});
+   html+='<label class="mrow"><input type="checkbox" '+(on?"checked":"")+' data-m="'+m.model+'"><span class="dot '+health(m)+'"></span><span class="nm" title="'+m.model+'">'+m.model+'</span><span class="tp" title="tok/s p50">'+Math.round(m.decode_p50)+'</span></label>'});
   html+='</div>'});
  leg.innerHTML=html;
  leg.querySelectorAll("input").forEach(function(c){c.onchange=function(){hidden[c.dataset.m]=!c.checked;render()}});
  chart(ms,colors);table(ms,colors);
  document.getElementById("railsub").textContent="live · "+ms.length+" models · "+range;
  tick()}
-function chart(ms,colors){var W=940,H=320,P=40,R=76;
+function chart(ms,colors){var W=940,H=320,P=40,R=96;
  var pts=[],mx=0,minB=Infinity,maxB=0;
  ms.forEach(function(m){if(hidden[m.model])return;(m.series||[]).forEach(function(s){pts.push({m:m.model,c:colors[m.model],b:s.b,v:s.v});mx=Math.max(mx,s.v);minB=Math.min(minB,s.b);maxB=Math.max(maxB,s.b)})});
  if(!pts.length){document.getElementById("chart").innerHTML='<text x="470" y="160" class="lbl" text-anchor="middle">no samples in window</text>';return}
@@ -90,17 +90,19 @@ function chart(ms,colors){var W=940,H=320,P=40,R=76;
  var byM={};pts.forEach(function(p){(byM[p.m]=byM[p.m]||[]).push(p)});
  var ends=[];
  Object.keys(byM).forEach(function(name){var arr=byM[name].sort(function(a,b){return a.b-b.b});
-  var d=arr.map(function(p){return (P+(p.b-minB)/(maxB-minB)*(W-P-R)).toFixed(1)+","+(H-32-(p.v/nice)*(H-64)).toFixed(1)}).join(" ");
-  g+='<polyline points="'+d+'" fill="none" stroke="'+arr[0].c+'" stroke-width="1.5" stroke-linejoin="round" opacity=".9"/>';
-  ends.push({y:H-32-(arr[arr.length-1].v/nice)*(H-64),c:arr[0].c,t:name.length>15?name.slice(0,14)+"…":name})});
+  var xy=arr.map(function(p){return [(P+(arr.length>1?(p.b-minB)/(maxB-minB):0.5)*(W-P-R)).toFixed(1),(H-32-(p.v/nice)*(H-64)).toFixed(1)]});
+  if(arr.length>1)g+='<polyline points="'+xy.map(function(c){return c.join(",")}).join(" ")+'" fill="none" stroke="'+arr[0].c+'" stroke-width="1.5" stroke-linejoin="round" opacity=".9"/>';
+  xy.forEach(function(c){g+='<circle cx="'+c[0]+'" cy="'+c[1]+'" r="2.5" fill="'+arr[0].c+'"/>'});
+  ends.push({y:parseFloat(xy[xy.length-1][1]),c:arr[0].c,t:name.length>13?name.slice(0,12)+"…":name})});
  ends.sort(function(a,b){return a.y-b.y});
  for(var e=1;e<ends.length;e++)if(ends[e].y-ends[e-1].y<13)ends[e].y=ends[e-1].y+13;
  ends.forEach(function(o){g+='<text x="'+(W-R+8)+'" y="'+(o.y+3)+'" class="lbl" fill="'+o.c+'" style="font-size:9.5px">'+o.t+'</text>'});
  var ticks=Math.min(6,maxB-minB>0?6:1);
- for(var x=0;x<=ticks;x++){var bb=minB+(maxB-minB)*x/ticks,xx=P+(bb-minB)/(maxB-minB)*(W-P-R);
+ if(maxB-minB<3*3600){g+='<text x="'+(P+(W-P-R)/2)+'" y="'+(H-12)+'" class="lbl" text-anchor="middle">'+fmtTs(minB,range)+'</text>'}
+ else for(var x=0;x<=ticks;x++){var bb=minB+(maxB-minB)*x/ticks,xx=P+(bb-minB)/(maxB-minB)*(W-P-R);
   g+='<text x="'+xx+'" y="'+(H-12)+'" class="lbl" text-anchor="middle">'+fmtTs(bb,range)+'</text>'}
  document.getElementById("chart").innerHTML=g}
-function table(ms,colors){var head='<tr><th>model</th><th>reqs</th><th>ok</th><th>tok/s p50</th><th>slow p10</th><th>ttft p50</th><th>ttft p90</th><th>prefill t/s</th><th>cache</th><th>429</th></tr>';
+function table(ms,colors){var head='<tr><th>model</th><th>reqs</th><th>ok</th><th>tok/s p50</th><th>slow p10</th><th>ttft p50</th><th>ttft p90</th><th>prefill t/s</th><th>cache</th><th>rate limits</th></tr>';
  var rows=ms.filter(function(m){return!hidden[m.model]}).map(function(m){
   return '<tr><td><span class="mname"><span class="dot '+health(m)+'"></span>'+m.model+'</span></td>'+
    '<td>'+m.reqs.toLocaleString()+'</td>'+
@@ -115,7 +117,9 @@ function table(ms,colors){var head='<tr><th>model</th><th>reqs</th><th>ok</th><t
 function tick(){if(!lastFetch)return;
  document.getElementById("stamp").textContent="updated "+Math.max(0,Math.round((Date.now()-lastFetch)/1000))+"s ago"+(data&&data.dropped?" · "+data.dropped+" dropped":"")}
 setInterval(tick,1000);
-function load(){var k=getKey();
+function load(){
+ if(window.__TM_PRELOAD){data=window.__TM_PRELOAD;lastFetch=Date.now();hideKey();render();return}
+ var k=getKey();
  if(!k){showKey("");return}
  fetch(API+"?window="+range,{headers:{"Authorization":"Bearer "+k}}).then(function(r){
   if(r.status===401||r.status===403){showKey(r.status===403?"banned or wrong key":"wrong key");return}
