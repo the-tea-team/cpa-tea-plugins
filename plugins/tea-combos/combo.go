@@ -30,6 +30,9 @@ type Combo struct {
 	SessionAffinity *bool    `json:"sessionAffinity,omitempty" yaml:"sessionAffinity,omitempty"`
 	TTL             string   `json:"ttl,omitempty" yaml:"ttl,omitempty"`
 	Enabled         *bool    `json:"enabled,omitempty" yaml:"enabled"`
+	// CooldownSeconds overrides the plugin-wide cooling window for this combo. Nil means use
+	// the plugin default; zero disables cooling for this combo.
+	CooldownSeconds *int `json:"cooldownSeconds,omitempty" yaml:"cooldownSeconds,omitempty"`
 }
 
 // IsEnabled reports whether the combo may be routed. An unset enabled flag means enabled.
@@ -86,6 +89,9 @@ func (c Combo) Validate() error {
 			return fmt.Errorf("combo %q: member %d has an empty model", c.Name, index)
 		}
 	}
+	if c.CooldownSeconds != nil && *c.CooldownSeconds < 0 {
+		return fmt.Errorf("combo %q: cooldownSeconds must not be negative, got %d", c.Name, *c.CooldownSeconds)
+	}
 	return nil
 }
 
@@ -105,6 +111,9 @@ func normalizeStrategy(strategy string) (string, error) {
 type seedConfig struct {
 	StatePath string
 	Combos    []Combo
+	// CooldownSeconds is the plugin-wide cooling window. Nil means the built-in default;
+	// zero disables cooling.
+	CooldownSeconds *int
 }
 
 // parseSeedConfig reads the plugin block. CPA hands plugins raw YAML bytes, so this uses a real
@@ -116,13 +125,18 @@ func parseSeedConfig(raw []byte) (seedConfig, error) {
 		return cfg, nil
 	}
 	var doc struct {
-		StatePath string    `yaml:"statePath"`
-		Combos    yaml.Node `yaml:"combos"`
+		StatePath       string    `yaml:"statePath"`
+		CooldownSeconds *int      `yaml:"cooldownSeconds"`
+		Combos          yaml.Node `yaml:"combos"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return cfg, fmt.Errorf("parse plugins.configs.tea-combos: %w", err)
 	}
 	cfg.StatePath = strings.TrimSpace(doc.StatePath)
+	cfg.CooldownSeconds = doc.CooldownSeconds
+	if doc.CooldownSeconds != nil && *doc.CooldownSeconds < 0 {
+		return cfg, fmt.Errorf("cooldownSeconds must not be negative, got %d", *doc.CooldownSeconds)
+	}
 	combos, err := decodeCombos(doc.Combos)
 	if err != nil {
 		return cfg, err
