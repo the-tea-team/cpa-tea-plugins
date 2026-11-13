@@ -20,7 +20,7 @@ const (
 	defaultStateFileName = "tea-combos.state.json"
 )
 
-var pluginVersion = "0.2.0"
+var pluginVersion = "0.2.1"
 
 // defaultCooldownSeconds parks a member after a member-side failure when neither the combo nor
 // the plugin config overrides the window.
@@ -313,6 +313,28 @@ func memberFailure(status int, message string) bool {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return accountExhausted(message)
+	case http.StatusBadRequest, http.StatusNotFound:
+		// "unknown provider for model X" / "model X does not exist": the MEMBER lost its
+		// model (renamed, retired, account lost access). The client never asked for that
+		// model — the combo did — so the next member must get the request.
+		return modelUnavailable(message)
+	}
+	return false
+}
+
+// modelUnavailable matches upstream "this model does not exist / no provider" wording.
+// Narrow on purpose: payload-level 400s (bad parameters, unsupported fields) stay fatal
+// because every member would repeat them.
+func modelUnavailable(message string) bool {
+	lower := strings.ToLower(message)
+	needles := []string{
+		"model_not_found", "unknown provider for model", "does not exist",
+		"no such model", "model not found", "is not a valid model",
+	}
+	for _, needle := range needles {
+		if strings.Contains(lower, needle) {
+			return true
+		}
 	}
 	return false
 }
