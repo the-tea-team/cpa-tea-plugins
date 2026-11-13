@@ -1,5 +1,13 @@
 # tea-combos release notes
 
+## v0.2.1 — members that lost their model fall through too
+
+A member whose model no longer resolves (`400 model_not_found`, `unknown provider for model`,
+`404 ... does not exist`) is a member failure, not a client failure: the client asked for the
+combo, not for the vanished model. The chain now cools that member and continues to the next one.
+Payload-level 400s (bad parameters every member would repeat) still stop the chain. Found live:
+a demo combo's dead member returned 400 and killed the request despite a healthy backup member.
+
 ## v0.2.0 — cooldown-aware fallback
 
 - Account/quota failures (`401`/`403` with quota, billing, credit or credential wording) now fall

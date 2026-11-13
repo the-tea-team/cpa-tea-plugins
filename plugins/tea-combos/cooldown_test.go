@@ -76,7 +76,10 @@ func TestMemberFailureClassification(t *testing.T) {
 		{"401 invalid key", 401, "invalid api key provided", true},
 		{"403 unrelated stays fatal", 403, "model is not available for this account", false},
 		{"400 bad payload stays fatal", 400, "max_output_tokens must be >= 16", false},
-		{"404 unknown model stays fatal", 404, "model not found", false},
+		{"400 unknown member model falls through", 400, "unknown provider for model no-such-model-zz", true},
+		{"400 model_not_found falls through", 400, `{"error":{"code":"model_not_found","param":"model"}}`, true},
+		{"404 retired model falls through", 404, "The model `gpt-x` does not exist or you do not have access to it.", true},
+		{"404 unknown route stays fatal", 404, "no handler for this path", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
