@@ -145,7 +145,7 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 	if preferredIndex < 0 && bound {
 		preferredIndex = boundIndex
 	}
-	order := withPreferred(selector.Order(combo, affinityKey), preferredIndex)
+	order := p.selectOrder(combo, selector, affinityKey, preferredIndex)
 
 	trace := make([]attemptTrace, 0, len(order))
 	lastStatus := 0
@@ -191,9 +191,10 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 
 		if err != nil || status >= http.StatusBadRequest || strings.TrimSpace(opened.StreamID) == "" {
 			trace = append(trace, attemptTrace{Member: member.Model, Status: status, Error: message, Retryable: retryable})
-			if !retryable {
+			if !memberFailure(status, message) {
 				return -1, nil, nil, &comboError{Status: status, Message: message}
 			}
+			p.cooldown.Cool(combo.Name, member, p.effectiveCooldown(combo))
 			lastStatus = status
 			lastMessage = message
 			continue
@@ -205,14 +206,16 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 			status, retryable = streamErrorStatus(readErr)
 			message = readErr.Error()
 			trace = append(trace, attemptTrace{Member: member.Model, Status: status, Error: message, Retryable: retryable})
-			if !retryable {
+			if !memberFailure(status, message) {
 				return -1, nil, nil, &comboError{Status: status, Message: message}
 			}
+			p.cooldown.Cool(combo.Name, member, p.effectiveCooldown(combo))
 			lastStatus = status
 			lastMessage = message
 			continue
 		}
 		trace = append(trace, attemptTrace{Member: member.Model, Status: status, Retryable: false})
+		p.cooldown.Clear(combo.Name, member)
 		handle := &comboStreamHandle{streamID: opened.StreamID}
 		if len(first) == 0 && done {
 			// A clean empty stream is a successful member: nothing to forward, no fallback.
@@ -240,7 +243,7 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 	return -1, nil, nil, &comboError{
 		Status:    lastStatus,
 		Retryable: true,
-		Message:   fmt.Sprintf("combo %s exhausted: %s | attempts=%s", combo.Name, lastMessage, string(encodedTrace)),
+		Message:   fmt.Sprintf("combo %s exhausted: %s | attempts=%s | cooling=%v", combo.Name, lastMessage, string(encodedTrace), p.cooldown.Cooling(combo.Name, combo.Members)),
 	}
 }
 

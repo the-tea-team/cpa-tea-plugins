@@ -85,11 +85,28 @@ interface is the seam for it.
 
 ## Failure behaviour
 
-Members are tried in selector order. The chain falls through only on retryable failures: `408`,
-`429`, any `5xx`, or an upstream error envelope carrying `retryable`. A non-retryable client error
-stops the chain and is returned with its real HTTP status. When every member fails retryably the
-executor returns the last status, `retryable: true`, and an attempt trace naming each member and
-status. Request bodies and credentials are never logged.
+Members are tried in selector order. The chain falls through on retryable failures — `408`,
+`429`, any `5xx`, or an upstream error envelope carrying `retryable` — and also on **member-side
+account failures**: a `401`/`403` whose message carries quota, billing, credit or credential
+language (`insufficient_quota`, `RESOURCE_EXHAUSTED`, `credit balance`, `invalid api key`, …).
+Those are the member's problem, not the client's, so the next member gets the request instead of
+the whole combo erroring. A genuine client error (a `400` the payload deserves, an unrelated
+`403`) stops the chain and is returned with its real HTTP status. When every member fails the
+executor returns the last status, `retryable: true`, an attempt trace naming each member and
+status, and a `cooling=[…]` snapshot. Request bodies and credentials are never logged.
+
+## Cooldown
+
+After a member-side failure that member is **cooled**: selection skips it for a while so a dead
+lane stops eating requests and latency.
+
+- Window: `cooldownSeconds` in the plugin config (default 30, `0` disables), overridable per combo
+  with `cooldownSeconds` on the combo itself.
+- A member that serves successfully clears its cooling immediately.
+- A session-affinity binding to a cooled member is skipped; the binding rebinds to whoever serves.
+- If EVERY member is cooling the filter fails open and the full ring is attempted anyway — a
+  fleet-wide blip must not become a guaranteed 502.
+- Cooling is process-local; a restart forgets it (the upstream may already have recovered).
 
 ## Streaming
 

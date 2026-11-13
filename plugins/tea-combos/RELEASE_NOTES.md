@@ -1,3 +1,18 @@
+# tea-combos release notes
+
+## v0.2.0 — cooldown-aware fallback
+
+- Account/quota failures (`401`/`403` with quota, billing, credit or credential wording) now fall
+  through to the next member instead of erroring the whole combo. A `403 insufficient_quota` on a
+  single-member combo is what motivated this release.
+- Cooled members: after any member-side failure the member is skipped by selection for
+  `cooldownSeconds` (plugin default 30, per-combo override, `0` disables). Success clears cooling.
+- Session affinity skips a cooled binding and rebinds to the member that served.
+- Fail-open when every member is cooling: the full ring is attempted rather than a guaranteed 502.
+- Exhausted-chain messages now carry a `cooling=[…]` snapshot next to the attempt trace.
+- Streaming applies the same classification, cooling and fail-open rules, still only before the
+  first payload byte reaches the client.
+
 # tea-combos release notes (draft, v0.1.0)
 
 ## Assumptions

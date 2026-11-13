@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
@@ -19,7 +20,11 @@ const (
 	defaultStateFileName = "tea-combos.state.json"
 )
 
-var pluginVersion = "0.1.0"
+var pluginVersion = "0.2.0"
+
+// defaultCooldownSeconds parks a member after a member-side failure when neither the combo nor
+// the plugin config overrides the window.
+const defaultCooldownSeconds = 30
 
 // comboError carries a real HTTP status through the ABI error envelope. ExecutorResponse has no
 // status field, so a failed chain expressed as a response would reach the client as HTTP 200.
@@ -33,9 +38,11 @@ func (e *comboError) Error() string { return e.Message }
 
 // combosPlugin implements ModelRouter and Executor for named model combos.
 type combosPlugin struct {
-	store      *Store
-	roundRobin *roundRobinSelector
-	affinity   *Affinity
+	store          *Store
+	roundRobin     *roundRobinSelector
+	affinity       *Affinity
+	cooldown       *cooldownTracker
+	cooldownWindow time.Duration
 }
 
 // newCombosPlugin loads the state file, merges seed combos into it, and returns a ready plugin.
@@ -56,10 +63,19 @@ func newCombosPlugin(configYAML []byte, pluginDir string) (*combosPlugin, error)
 		return nil, fmt.Errorf("persist seed combos to %s: %w", statePath, err)
 	}
 	bindings := store.LoadBindings()
+	window := time.Duration(defaultCooldownSeconds) * time.Second
+	if cfg.CooldownSeconds != nil {
+		window = time.Duration(*cfg.CooldownSeconds) * time.Second
+		if window < 0 {
+			window = 0
+		}
+	}
 	return &combosPlugin{
-		store:      store,
-		roundRobin: newRoundRobinSelector(),
-		affinity:   newAffinity(bindings, store.SaveBindings),
+		store:          store,
+		roundRobin:     newRoundRobinSelector(),
+		affinity:       newAffinity(bindings, store.SaveBindings),
+		cooldown:       newCooldownTracker(),
+		cooldownWindow: window,
 	}, nil
 }
 
@@ -116,6 +132,11 @@ func (p *combosPlugin) plugin() pluginapi.Plugin {
 					Name:        "combos",
 					Type:        pluginapi.ConfigFieldTypeObject,
 					Description: "Seed combos: a mapping of combo name to combo, or a list of combos. Seeds only add names absent from the state file.",
+				},
+				{
+					Name:        "cooldownSeconds",
+					Type:        pluginapi.ConfigFieldTypeInteger,
+					Description: "Seconds a failed member is skipped by selection after a member-side failure (quota, rate limit, credential, capacity). Default 30; 0 disables cooling.",
 				},
 			},
 		},
@@ -183,7 +204,7 @@ func (p *combosPlugin) executeCombo(ctx context.Context, req pluginapi.ExecutorR
 	if !bound {
 		preferred = -1
 	}
-	order := withPreferred(selector.Order(combo, key), preferred)
+	order := p.selectOrder(combo, selector, key, preferred)
 	response, used, err := p.runAttempts(ctx, req, combo, order)
 	if err != nil {
 		return pluginapi.ExecutorResponse{}, err
@@ -245,12 +266,16 @@ func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRe
 		}
 
 		trace = append(trace, attemptTrace{Member: member.Model, Status: status, Error: message, Retryable: retryable})
-		if !retryable {
+		if !memberFailure(status, message) {
+			p.cooldown.Clear(combo.Name, member)
 			if err != nil {
 				return pluginapi.ExecutorResponse{}, -1, &comboError{Status: status, Message: message}
 			}
 			return pluginapi.ExecutorResponse{Payload: result.Body, Headers: result.Headers}, index, nil
 		}
+		// The member itself failed (capacity, quota, credential, transient): park it, tell the
+		// selector, and let the next member answer this request.
+		p.cooldown.Cool(combo.Name, member, p.effectiveCooldown(combo))
 		lastStatus = status
 		lastMessage = message
 	}
@@ -265,7 +290,7 @@ func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRe
 	return pluginapi.ExecutorResponse{}, -1, &comboError{
 		Status:    lastStatus,
 		Retryable: true,
-		Message:   fmt.Sprintf("combo %s exhausted: %s | attempts=%s", combo.Name, lastMessage, string(encodedTrace)),
+		Message:   fmt.Sprintf("combo %s exhausted: %s | attempts=%s | cooling=%v", combo.Name, lastMessage, string(encodedTrace), p.cooldown.Cooling(combo.Name, combo.Members)),
 	}
 }
 
@@ -275,6 +300,74 @@ func retryableStatus(status int) bool {
 		return true
 	}
 	return status >= 500 && status <= 599
+}
+
+// memberFailure reports whether a failed member attempt is one the NEXT member could escape
+// (capacity, quota, credential, transient) rather than a client-side fault every member would
+// repeat. Account exhaustion is the sharp edge: an upstream 401/403 carrying quota or billing
+// language is the member's problem, not the client's, even though its status code looks fatal.
+func memberFailure(status int, message string) bool {
+	if retryableStatus(status) {
+		return true
+	}
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return accountExhausted(message)
+	}
+	return false
+}
+
+// accountExhausted matches the quota/billing/credential wording upstreams put into 401/403
+// bodies: OpenAI insufficient_quota, Anthropic credit balances, Google RESOURCE_EXHAUSTED.
+// Matching is deliberately narrow so an unrelated 403 stays fatal and genuine client faults
+// still stop the chain on the first member.
+func accountExhausted(message string) bool {
+	lower := strings.ToLower(message)
+	needles := []string{
+		"insufficient_quota", "insufficient quota", "credit balance", "credit_balance",
+		"billing", "out of credit", "quota exceeded", "quota limit", "resource_exhausted",
+		"invalid api key", "invalid x-api-key", "invalid_api_key", "authentication_error",
+		"invalid token", "token expired",
+	}
+	for _, needle := range needles {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// selectOrder filters cooled members out of the selector order. A cooled session-affinity
+// binding is skipped so the request lands on a healthy member and the binding rebinds to
+// whoever serves. When EVERY member is cooling the filter fails open and the full ring is
+// attempted: a fleet-wide blip must not become a guaranteed 502, and the attempt trace plus
+// the cooling snapshot show what was parked.
+func (p *combosPlugin) selectOrder(combo Combo, selector Selector, key string, preferred int) []int {
+	order := selector.Order(combo, key)
+	live := make([]int, 0, len(order))
+	for _, index := range order {
+		if !p.cooldown.Active(combo.Name, combo.Members[index]) {
+			live = append(live, index)
+		}
+	}
+	if len(live) > 0 {
+		order = live
+	}
+	if preferred >= 0 && !p.cooldown.Active(combo.Name, combo.Members[preferred]) {
+		order = withPreferred(order, preferred)
+	}
+	return order
+}
+
+// effectiveCooldown is the per-combo override, falling back to the plugin-wide window.
+func (p *combosPlugin) effectiveCooldown(combo Combo) time.Duration {
+	if combo.CooldownSeconds != nil {
+		if *combo.CooldownSeconds < 0 {
+			return 0
+		}
+		return time.Duration(*combo.CooldownSeconds) * time.Second
+	}
+	return p.cooldownWindow
 }
 
 // ExecuteStream falls back across members only before the first payload reaches the client. See
