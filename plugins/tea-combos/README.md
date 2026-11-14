@@ -102,6 +102,10 @@ lane stops eating requests and latency.
 
 - Window: `cooldownSeconds` in the plugin config (default 30, `0` disables), overridable per combo
   with `cooldownSeconds` on the combo itself.
+- Retry hints win: a `Retry-After` header (delta-seconds or HTTP-date) or prose reset
+  ("try again in 4.5 hours", "retry-after: 3600") parks the member for the hinted duration,
+  clamped to `maxCooldownSeconds` (default 900) so long Claude 5h/7d windows become probe
+  intervals rather than permanent exile. A zero hint cools nothing ("retry now").
 - A member that serves successfully clears its cooling immediately.
 - A session-affinity binding to a cooled member is skipped; the binding rebinds to whoever serves.
 - If EVERY member is cooling the filter fails open and the full ring is attempted anyway — a

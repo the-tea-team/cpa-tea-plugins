@@ -1,5 +1,15 @@
 # tea-combos release notes
 
+## v0.2.2 — honour upstream retry hints
+
+A member failure carrying a Retry-After (response header, delta-seconds or HTTP-date) or prose
+quota reset ("try again in 4.5 hours", "retry-after: 3600") now parks the member for the hinted
+duration instead of the flat default window. Hints are clamped to `maxCooldownSeconds` (default
+900) so Claude's 5h/7d windows become probe intervals, not permanent exile — the member is
+retried periodically and clears itself the moment it serves, and CPA rejects fully-cooled
+credentials locally so probes never reach the upstream. A zero hint means "retry now" and cools
+nothing. Applies to both the buffered and streaming paths.
+
 ## v0.2.1 — members that lost their model fall through too
 
 A member whose model no longer resolves (`400 model_not_found`, `unknown provider for model`,

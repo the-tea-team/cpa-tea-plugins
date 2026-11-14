@@ -1,6 +1,10 @@
 package main
 
 import (
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -75,4 +79,81 @@ func (t *cooldownTracker) Cooling(comboName string, members []Member) []string {
 		}
 	}
 	return cooling
+}
+
+// parseRetryHint extracts an upstream "come back in X" signal. Response headers win over
+// message text: Retry-After (delta-seconds or HTTP-date) is what CPA relays when the upstream
+// sent it, and what CPA synthesizes from Claude's 5h/7d unified-cooldown metadata when every
+// credential for the model is cooling. The message scan is a best-effort fallback for quota
+// errors whose reset time only appears in prose ("try again in 4.5 hours"). A zero duration
+// means the upstream accepts an immediate retry. Nil means "no signal, use the default window".
+func parseRetryHint(headers map[string][]string, message string) *time.Duration {
+	for name, values := range headers {
+		if !strings.EqualFold(strings.TrimSpace(name), "Retry-After") {
+			continue
+		}
+		for _, raw := range values {
+			if d, ok := parseRetryAfterValue(raw, time.Now()); ok {
+				return &d
+			}
+		}
+	}
+	if d, ok := parseRetryAfterProse(message); ok {
+		return &d
+	}
+	return nil
+}
+
+func parseRetryAfterValue(raw string, now time.Time) (time.Duration, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false
+	}
+	if seconds, errParse := strconv.Atoi(raw); errParse == nil {
+		if seconds < 0 {
+			return 0, true
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	if when, errParse := http.ParseTime(raw); errParse == nil {
+		d := when.Sub(now)
+		if d < 0 {
+			return 0, true
+		}
+		return d, true
+	}
+	return 0, false
+}
+
+var retryAfterProse = regexp.MustCompile(`(?i)retry[-_ ]after["': ]+(\d+)`)
+var tryAgainInProse = regexp.MustCompile(`(?i)try again in (\d+(?:\.\d+)?)\s*(second|minute|hour|day)s?`)
+
+func parseRetryAfterProse(message string) (time.Duration, bool) {
+	if m := retryAfterProse.FindStringSubmatch(message); m != nil {
+		if seconds, errParse := strconv.Atoi(m[1]); errParse == nil {
+			return time.Duration(seconds) * time.Second, true
+		}
+	}
+	m := tryAgainInProse.FindStringSubmatch(message)
+	if m == nil {
+		return 0, false
+	}
+	amount, errParse := strconv.ParseFloat(m[1], 64)
+	if errParse != nil {
+		return 0, false
+	}
+	var unit time.Duration
+	switch strings.ToLower(m[2]) {
+	case "second":
+		unit = time.Second
+	case "minute":
+		unit = time.Minute
+	case "hour":
+		unit = time.Hour
+	case "day":
+		unit = 24 * time.Hour
+	default:
+		return 0, false
+	}
+	return time.Duration(amount * float64(unit)), true
 }

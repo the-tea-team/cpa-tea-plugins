@@ -33,7 +33,7 @@ func newTestPlugin(t *testing.T) *combosPlugin {
 	if err != nil {
 		t.Fatalf("OpenStore: %v", err)
 	}
-	return &combosPlugin{store: store, roundRobin: newRoundRobinSelector(), cooldown: newCooldownTracker(), cooldownWindow: 30 * time.Second}
+	return &combosPlugin{store: store, roundRobin: newRoundRobinSelector(), cooldown: newCooldownTracker(), cooldownWindow: 30 * time.Second, maxCooldown: 900 * time.Second}
 }
 
 func stubHostExecute(t *testing.T, fn func(context.Context, pluginapi.HostModelExecutionRequest) (*pluginapi.HostModelExecutionResponse, error)) {

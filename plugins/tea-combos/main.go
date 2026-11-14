@@ -20,11 +20,16 @@ const (
 	defaultStateFileName = "tea-combos.state.json"
 )
 
-var pluginVersion = "0.2.1"
+var pluginVersion = "0.2.2"
 
 // defaultCooldownSeconds parks a member after a member-side failure when neither the combo nor
 // the plugin config overrides the window.
 const defaultCooldownSeconds = 30
+
+// defaultMaxCooldownSeconds caps how long an upstream retry hint may park a member. Long quota
+// windows (Claude 5h/7d) stay probe intervals rather than permanent exile: the member is retried
+// periodically and clears itself the moment it serves again.
+const defaultMaxCooldownSeconds = 900
 
 // comboError carries a real HTTP status through the ABI error envelope. ExecutorResponse has no
 // status field, so a failed chain expressed as a response would reach the client as HTTP 200.
@@ -43,6 +48,7 @@ type combosPlugin struct {
 	affinity       *Affinity
 	cooldown       *cooldownTracker
 	cooldownWindow time.Duration
+	maxCooldown    time.Duration
 }
 
 // newCombosPlugin loads the state file, merges seed combos into it, and returns a ready plugin.
@@ -70,12 +76,20 @@ func newCombosPlugin(configYAML []byte, pluginDir string) (*combosPlugin, error)
 			window = 0
 		}
 	}
+	maxCooldown := time.Duration(defaultMaxCooldownSeconds) * time.Second
+	if cfg.MaxCooldownSeconds != nil {
+		maxCooldown = time.Duration(*cfg.MaxCooldownSeconds) * time.Second
+		if maxCooldown < 0 {
+			maxCooldown = 0
+		}
+	}
 	return &combosPlugin{
 		store:          store,
 		roundRobin:     newRoundRobinSelector(),
 		affinity:       newAffinity(bindings, store.SaveBindings),
 		cooldown:       newCooldownTracker(),
 		cooldownWindow: window,
+		maxCooldown:    maxCooldown,
 	}, nil
 }
 
@@ -137,6 +151,11 @@ func (p *combosPlugin) plugin() pluginapi.Plugin {
 					Name:        "cooldownSeconds",
 					Type:        pluginapi.ConfigFieldTypeInteger,
 					Description: "Seconds a failed member is skipped by selection after a member-side failure (quota, rate limit, credential, capacity). Default 30; 0 disables cooling.",
+				},
+				{
+					Name:        "maxCooldownSeconds",
+					Type:        pluginapi.ConfigFieldTypeInteger,
+					Description: "Cap on how long an upstream Retry-After hint may park a member. Long quota windows (Claude 5h/7d) become probe intervals instead of permanent exile. Default 900.",
 				},
 			},
 		},
@@ -275,7 +294,11 @@ func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRe
 		}
 		// The member itself failed (capacity, quota, credential, transient): park it, tell the
 		// selector, and let the next member answer this request.
-		p.cooldown.Cool(combo.Name, member, p.effectiveCooldown(combo))
+		var headers map[string][]string
+		if result != nil {
+			headers = result.Headers
+		}
+		p.cooldown.Cool(combo.Name, member, p.coolDuration(combo, headers, message))
 		lastStatus = status
 		lastMessage = message
 	}
@@ -390,6 +413,26 @@ func (p *combosPlugin) effectiveCooldown(combo Combo) time.Duration {
 		return time.Duration(*combo.CooldownSeconds) * time.Second
 	}
 	return p.cooldownWindow
+}
+
+// coolDuration picks how long to park a failed member. An explicit upstream retry hint wins
+// over the configured window — honouring Claude's 5h/7d unified-cooldown Retry-After and
+// Google's quota hints — but is clamped to maxCooldown so a week-long window stays a probe
+// interval: the member is retried periodically and clears itself the moment it serves again
+// (CPA rejects fully-cooled credentials locally, so probes never hit the upstream). A hint of
+// zero means the upstream accepts an immediate retry, so nothing is cooled.
+func (p *combosPlugin) coolDuration(combo Combo, headers map[string][]string, message string) time.Duration {
+	hint := parseRetryHint(headers, message)
+	if hint == nil {
+		return p.effectiveCooldown(combo)
+	}
+	if *hint > p.maxCooldown {
+		return p.maxCooldown
+	}
+	if *hint < 0 {
+		return 0
+	}
+	return *hint
 }
 
 // ExecuteStream falls back across members only before the first payload reaches the client. See
