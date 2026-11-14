@@ -114,6 +114,9 @@ type seedConfig struct {
 	// CooldownSeconds is the plugin-wide cooling window. Nil means the built-in default;
 	// zero disables cooling.
 	CooldownSeconds *int
+	// MaxCooldownSeconds caps how long a Retry-After hint may park a member. Nil means the
+	// built-in default.
+	MaxCooldownSeconds *int
 }
 
 // parseSeedConfig reads the plugin block. CPA hands plugins raw YAML bytes, so this uses a real
@@ -125,17 +128,22 @@ func parseSeedConfig(raw []byte) (seedConfig, error) {
 		return cfg, nil
 	}
 	var doc struct {
-		StatePath       string    `yaml:"statePath"`
-		CooldownSeconds *int      `yaml:"cooldownSeconds"`
-		Combos          yaml.Node `yaml:"combos"`
+		StatePath          string    `yaml:"statePath"`
+		CooldownSeconds    *int      `yaml:"cooldownSeconds"`
+		MaxCooldownSeconds *int      `yaml:"maxCooldownSeconds"`
+		Combos             yaml.Node `yaml:"combos"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return cfg, fmt.Errorf("parse plugins.configs.tea-combos: %w", err)
 	}
 	cfg.StatePath = strings.TrimSpace(doc.StatePath)
 	cfg.CooldownSeconds = doc.CooldownSeconds
+	cfg.MaxCooldownSeconds = doc.MaxCooldownSeconds
 	if doc.CooldownSeconds != nil && *doc.CooldownSeconds < 0 {
 		return cfg, fmt.Errorf("cooldownSeconds must not be negative, got %d", *doc.CooldownSeconds)
+	}
+	if doc.MaxCooldownSeconds != nil && *doc.MaxCooldownSeconds < 0 {
+		return cfg, fmt.Errorf("maxCooldownSeconds must not be negative, got %d", *doc.MaxCooldownSeconds)
 	}
 	combos, err := decodeCombos(doc.Combos)
 	if err != nil {

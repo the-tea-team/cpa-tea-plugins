@@ -194,7 +194,11 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 			if !memberFailure(status, message) {
 				return -1, nil, nil, &comboError{Status: status, Message: message}
 			}
-			p.cooldown.Cool(combo.Name, member, p.effectiveCooldown(combo))
+			var headers map[string][]string
+			if opened != nil {
+				headers = opened.Headers
+			}
+			p.cooldown.Cool(combo.Name, member, p.coolDuration(combo, headers, message))
 			lastStatus = status
 			lastMessage = message
 			continue
@@ -209,7 +213,7 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 			if !memberFailure(status, message) {
 				return -1, nil, nil, &comboError{Status: status, Message: message}
 			}
-			p.cooldown.Cool(combo.Name, member, p.effectiveCooldown(combo))
+			p.cooldown.Cool(combo.Name, member, p.coolDuration(combo, opened.Headers, message))
 			lastStatus = status
 			lastMessage = message
 			continue
