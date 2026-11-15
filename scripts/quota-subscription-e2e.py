@@ -195,8 +195,13 @@ def main():
             for _ in range(200):
                 snap = get(prefix + 'snapshot')
                 cs = [c for c in snap.get('credentials', []) if c['provider'] == 'claude']
-                if sum(c['authType'] == 'oauth' for c in cs) >= n_oauth and sum(c['authType'] == 'api_key' for c in cs) >= n_api:
+                classified = sum(c['authType'] == 'oauth' for c in cs) >= n_oauth and sum(c['authType'] == 'api_key' for c in cs) >= n_api
+                # The API model catalog can be ready before file-auth model registration.
+                # Presence-only readiness captured an empty OAuth model list on amd64 CI.
+                if classified and all(c.get('models') for c in cs if c['authType'] in ('oauth', 'api_key')):
                     return snap
+                if classified:
+                    call(prefix + 'refresh', 'POST', {})
                 time.sleep(.1)
             raise RuntimeError('inventory never populated: %s' % [(c['provider'], c['authType']) for c in snap.get('credentials', [])])
 
