@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -13,18 +14,24 @@ const (
 	// StrategyRoundRobin rotates members per request.
 	StrategyRoundRobin = "round-robin"
 	// StrategyFailover tries members in their configured order.
-	StrategyFailover = "failover"
+	StrategyFailover   = "failover"
+	StrategyWeighted   = "weighted-round-robin"
+	StrategyQuotaAware = "quota-aware-round-robin"
 )
 
 // Member is one upstream model a combo can execute.
 type Member struct {
-	Model    string `json:"model" yaml:"model"`
-	Provider string `json:"provider,omitempty" yaml:"provider,omitempty"`
+	Model     string  `json:"model" yaml:"model"`
+	Provider  string  `json:"provider,omitempty" yaml:"provider,omitempty"`
+	Weight    float64 `json:"weight,omitempty" yaml:"weight,omitempty"`
+	Role      string  `json:"role,omitempty" yaml:"role,omitempty"`
+	QuotaPool string  `json:"quotaPool,omitempty" yaml:"quotaPool,omitempty"`
 }
 
 // Combo is a named set of members with a selection strategy.
 type Combo struct {
 	Name            string   `json:"name" yaml:"name"`
+	AccountStrategy string   `json:"accountStrategy,omitempty" yaml:"accountStrategy,omitempty"`
 	Strategy        string   `json:"strategy,omitempty" yaml:"strategy,omitempty"`
 	Members         []Member `json:"members" yaml:"members"`
 	SessionAffinity *bool    `json:"sessionAffinity,omitempty" yaml:"sessionAffinity,omitempty"`
@@ -49,16 +56,18 @@ func (c Combo) Normalize() Combo {
 		c.Strategy = StrategyRoundRobin
 	}
 	c.TTL = strings.TrimSpace(c.TTL)
+	c.AccountStrategy = strings.TrimSpace(c.AccountStrategy)
 	if c.Enabled == nil {
 		enabled := true
 		c.Enabled = &enabled
 	}
 	members := make([]Member, 0, len(c.Members))
 	for _, member := range c.Members {
-		members = append(members, Member{
-			Model:    strings.TrimSpace(member.Model),
-			Provider: strings.TrimSpace(member.Provider),
-		})
+		member.Model = strings.TrimSpace(member.Model)
+		member.Provider = strings.TrimSpace(member.Provider)
+		member.Role = strings.TrimSpace(member.Role)
+		member.QuotaPool = strings.TrimSpace(member.QuotaPool)
+		members = append(members, member)
 	}
 	c.Members = members
 	return c
@@ -66,6 +75,9 @@ func (c Combo) Normalize() Combo {
 
 // Validate rejects combos that could never be routed unambiguously.
 func (c Combo) Validate() error {
+	if c.AccountStrategy != "" && c.AccountStrategy != "inherit" {
+		return fmt.Errorf("combo-local accountStrategy %q is unsupported; use the provider account scheduler", c.AccountStrategy)
+	}
 	if c.Name == "" {
 		return fmt.Errorf("combo name is required")
 	}
@@ -85,6 +97,12 @@ func (c Combo) Validate() error {
 		}
 	}
 	for index, member := range c.Members {
+		if member.Weight < 0 || math.IsNaN(member.Weight) || math.IsInf(member.Weight, 0) {
+			return fmt.Errorf("combo %q: member %d weight must be positive", c.Name, index)
+		}
+		if member.Role != "" && member.Role != "primary" && member.Role != "fallback" {
+			return fmt.Errorf("combo %q: member %d invalid role %q", c.Name, index, member.Role)
+		}
 		if member.Model == "" {
 			return fmt.Errorf("combo %q: member %d has an empty model", c.Name, index)
 		}
@@ -100,8 +118,8 @@ func normalizeStrategy(strategy string) (string, error) {
 	switch strings.TrimSpace(strategy) {
 	case "", StrategyRoundRobin:
 		return StrategyRoundRobin, nil
-	case StrategyFailover:
-		return StrategyFailover, nil
+	case StrategyFailover, StrategyWeighted, StrategyQuotaAware:
+		return strings.TrimSpace(strategy), nil
 	default:
 		return "", fmt.Errorf("unknown strategy %q (want %q or %q)", strategy, StrategyRoundRobin, StrategyFailover)
 	}
@@ -109,8 +127,10 @@ func normalizeStrategy(strategy string) (string, error) {
 
 // seedConfig is the plugin-owned block under plugins.configs.tea-combos.
 type seedConfig struct {
-	StatePath string
-	Combos    []Combo
+	StatePath          string
+	QuotaSnapshotPath  string
+	QuotaMaxAgeSeconds int
+	Combos             []Combo
 	// CooldownSeconds is the plugin-wide cooling window. Nil means the built-in default;
 	// zero disables cooling.
 	CooldownSeconds *int
@@ -129,6 +149,8 @@ func parseSeedConfig(raw []byte) (seedConfig, error) {
 	}
 	var doc struct {
 		StatePath          string    `yaml:"statePath"`
+		QuotaSnapshotPath  string    `yaml:"quotaSnapshotPath"`
+		QuotaMaxAgeSeconds int       `yaml:"quotaMaxAgeSeconds"`
 		CooldownSeconds    *int      `yaml:"cooldownSeconds"`
 		MaxCooldownSeconds *int      `yaml:"maxCooldownSeconds"`
 		Combos             yaml.Node `yaml:"combos"`
@@ -137,6 +159,11 @@ func parseSeedConfig(raw []byte) (seedConfig, error) {
 		return cfg, fmt.Errorf("parse plugins.configs.tea-combos: %w", err)
 	}
 	cfg.StatePath = strings.TrimSpace(doc.StatePath)
+	cfg.QuotaSnapshotPath = strings.TrimSpace(doc.QuotaSnapshotPath)
+	cfg.QuotaMaxAgeSeconds = doc.QuotaMaxAgeSeconds
+	if cfg.QuotaMaxAgeSeconds < 0 {
+		return cfg, fmt.Errorf("quotaMaxAgeSeconds must not be negative")
+	}
 	cfg.CooldownSeconds = doc.CooldownSeconds
 	cfg.MaxCooldownSeconds = doc.MaxCooldownSeconds
 	if doc.CooldownSeconds != nil && *doc.CooldownSeconds < 0 {

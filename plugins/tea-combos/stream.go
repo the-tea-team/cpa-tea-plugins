@@ -134,7 +134,7 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 	if len(combo.Members) == 0 {
 		return -1, nil, nil, &comboError{Status: http.StatusNotFound, Message: fmt.Sprintf("combo %q has no members", comboName)}
 	}
-	selector, err := selectorForStrategy(p.roundRobin, combo.Strategy)
+	selector, err := p.memberSelector(combo.Strategy)
 	if err != nil {
 		return -1, nil, nil, &comboError{Status: http.StatusInternalServerError, Message: err.Error()}
 	}

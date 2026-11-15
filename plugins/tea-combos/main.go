@@ -20,7 +20,7 @@ const (
 	defaultStateFileName = "tea-combos.state.json"
 )
 
-var pluginVersion = "0.2.2"
+var pluginVersion = "0.3.0"
 
 // defaultCooldownSeconds parks a member after a member-side failure when neither the combo nor
 // the plugin config overrides the window.
@@ -45,6 +45,7 @@ func (e *comboError) Error() string { return e.Message }
 type combosPlugin struct {
 	store          *Store
 	roundRobin     *roundRobinSelector
+	weighted       *weightedSelector
 	affinity       *Affinity
 	cooldown       *cooldownTracker
 	cooldownWindow time.Duration
@@ -86,6 +87,7 @@ func newCombosPlugin(configYAML []byte, pluginDir string) (*combosPlugin, error)
 	return &combosPlugin{
 		store:          store,
 		roundRobin:     newRoundRobinSelector(),
+		weighted:       newWeightedSelector(cfg.QuotaSnapshotPath, cfg.QuotaMaxAgeSeconds),
 		affinity:       newAffinity(bindings, store.SaveBindings),
 		cooldown:       newCooldownTracker(),
 		cooldownWindow: window,
@@ -99,6 +101,9 @@ func (p *combosPlugin) shutdown() {
 		return
 	}
 	p.affinity.Close()
+	if p.weighted != nil {
+		p.weighted.Close()
+	}
 }
 
 // resolveStatePath prefers the configured statePath, then the directory that holds the plugin
@@ -141,6 +146,16 @@ func (p *combosPlugin) plugin() pluginapi.Plugin {
 					Name:        "statePath",
 					Type:        pluginapi.ConfigFieldTypeString,
 					Description: "Path of the plugin-owned combo state file. Defaults to " + defaultStateFileName + " beside the plugin library.",
+				},
+				{
+					Name:        "quotaSnapshotPath",
+					Type:        pluginapi.ConfigFieldTypeString,
+					Description: "Optional observation snapshot path; never restricts credentials.",
+				},
+				{
+					Name:        "quotaMaxAgeSeconds",
+					Type:        pluginapi.ConfigFieldTypeInteger,
+					Description: "Maximum observation age in seconds; default 600.",
 				},
 				{
 					Name:        "combos",
@@ -214,7 +229,7 @@ func (p *combosPlugin) executeCombo(ctx context.Context, req pluginapi.ExecutorR
 	if len(combo.Members) == 0 {
 		return pluginapi.ExecutorResponse{}, &comboError{Status: http.StatusNotFound, Message: fmt.Sprintf("combo %q has no members", comboName)}
 	}
-	selector, err := selectorForStrategy(p.roundRobin, combo.Strategy)
+	selector, err := p.memberSelector(combo.Strategy)
 	if err != nil {
 		return pluginapi.ExecutorResponse{}, &comboError{Status: http.StatusInternalServerError, Message: err.Error()}
 	}
@@ -398,7 +413,17 @@ func (p *combosPlugin) selectOrder(combo Combo, selector Selector, key string, p
 	if len(live) > 0 {
 		order = live
 	}
-	if preferred >= 0 && !p.cooldown.Active(combo.Name, combo.Members[preferred]) {
+	primary := make([]int, 0, len(order))
+	fallback := make([]int, 0, len(order))
+	for _, i := range order {
+		if combo.Members[i].Role == "fallback" {
+			fallback = append(fallback, i)
+		} else {
+			primary = append(primary, i)
+		}
+	}
+	order = append(primary, fallback...)
+	if preferred >= 0 && preferred < len(combo.Members) && !(combo.Members[preferred].Role == "fallback" && len(primary) > 0) && !p.cooldown.Active(combo.Name, combo.Members[preferred]) {
 		order = withPreferred(order, preferred)
 	}
 	return order

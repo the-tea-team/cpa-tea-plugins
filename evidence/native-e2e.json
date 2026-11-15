@@ -1,0 +1,88 @@
+{
+  "syntheticOnly": true,
+  "checks": {
+    "native_inventory_includes_config_api_keys": true,
+    "public_shell_only": true,
+    "summary_requires_auth": true,
+    "native_plugins_loaded": true,
+    "weighted_1x_5x_pool_70_percent": true,
+    "combo_member_weight_5_to_1": true,
+    "native_stream": true,
+    "fallback_503_to_good": true,
+    "usage_attributed": true,
+    "shadow_decisions_recorded": true,
+    "api_cost_unknown_not_zero": true,
+    "override_readback": true,
+    "override_survives_restart": true,
+    "active_scheduler_exercised": true,
+    "no_synthetic_keys_in_summary": true,
+    "native_session_affinity": true,
+    "known_exhaustion_rejects_without_upstream": true
+  },
+  "passed": 17,
+  "total": 17,
+  "comboCounts": {
+    "good-model": 10,
+    "other-model": 2
+  },
+  "nativeAffinityObserved": true,
+  "lastDecisions": [
+    {
+      "at": "2026-11-15T21:37:10.209008323+03:00",
+      "provider": "",
+      "model": "good-model",
+      "selectedId": "openai-compatibility:mock:f0a389700ba2",
+      "mode": "active",
+      "reason": "proposed",
+      "scores": {
+        "openai-compatibility:mock:e3a3d6dcd8af": {
+          "value": 4.220210483534653,
+          "known": true,
+          "exhausted": false,
+          "reasons": [
+            "scored from fresh known windows"
+          ]
+        },
+        "openai-compatibility:mock:f0a389700ba2": {
+          "value": 17.000662444296438,
+          "known": true,
+          "exhausted": false,
+          "reasons": [
+            "scored from fresh known windows"
+          ]
+        }
+      }
+    },
+    {
+      "at": "2026-11-15T21:37:10.213281822+03:00",
+      "provider": "",
+      "model": "good-model",
+      "selectedId": "openai-compatibility:mock:f0a389700ba2",
+      "mode": "active",
+      "reason": "proposed",
+      "scores": {
+        "openai-compatibility:mock:e3a3d6dcd8af": {
+          "value": 4.220211049484904,
+          "known": true,
+          "exhausted": false,
+          "reasons": [
+            "scored from fresh known windows"
+          ]
+        },
+        "openai-compatibility:mock:f0a389700ba2": {
+          "value": 17.000664225708544,
+          "known": true,
+          "exhausted": false,
+          "reasons": [
+            "scored from fresh known windows"
+          ]
+        }
+      }
+    }
+  ],
+  "notProvenByThisHarness": [
+    "real provider collection",
+    "CPAMP integration (tested separately)",
+    "combo-local account policies blocked by priority gate"
+  ]
+}
