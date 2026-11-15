@@ -69,6 +69,19 @@ def main():
   checks['public_shell_only']=call('/v0/resource/plugins/tea-quota-router/capacity',auth=None)[0]==200
   checks['summary_requires_auth']=call('/v0/management/plugins/tea-quota-router/summary',auth=None)[0]==401
   checks['native_plugins_loaded']='tea-quota-router' in (run/'cpa.log').read_text() and 'tea-combos' in (run/'cpa.log').read_text()
+  # Off must be a real observer mode: no scheduler registration or decisions.
+  cfg['plugins']['configs']['tea-quota-router']['schedulerMode']='off'
+  cfg['routing']['session-affinity']=True
+  stop();start()
+  before=len(Upstream.calls)
+  for _ in range(4):
+   assert call('/v1/chat/completions','POST',{'model':'good-model','messages':[{'role':'user','content':'observer affinity'}],'prompt_cache_key':'observer-session'},'synthetic-caller')[0]==200
+  observed=json.loads(call('/v0/management/plugins/tea-quota-router/summary')[1])
+  checks['observer_has_no_scheduler_decisions']=observed['routing']['mode']=='off' and not observed['routing']['decisions']
+  checks['observer_preserves_core_affinity']=len(Upstream.calls)==before+4 and len({x['lane'] for x in Upstream.calls[before:]})==1
+  cfg['plugins']['configs']['tea-quota-router']['schedulerMode']='shadow'
+  cfg['routing']['session-affinity']=False
+  stop();start()
   now=datetime.datetime.now(UTC);accounts=[]
   for i,c in enumerate(snap['credentials']):
    c['accountId']=f'demo-{i}';c['label']=f'Account {i+1} (Demo User)'

@@ -32,7 +32,7 @@ jobs:
           cache: false
 
       - name: Install c-shared build prerequisites
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev python3-yaml
 
       - name: Download plugin modules
         run: |
@@ -43,3 +43,26 @@ jobs:
 
       - name: gofmt, vet, tests, c-shared build, registry
         run: scripts/check.sh
+
+      - name: Native CPA integration checks (synthetic accounts only)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/cpa" "$RUNNER_TEMP/quota-tests"
+          base=https://github.com/router-for-me/CLIProxyAPI/releases/download/v8.0.69
+          curl -fsSL "$base/CLIProxyAPI_8.0.69_linux_amd64.tar.gz" -o "$RUNNER_TEMP/cpa/CLIProxyAPI_8.0.69_linux_amd64.tar.gz"
+          curl -fsSL "$base/checksums.txt" -o "$RUNNER_TEMP/cpa/checksums.txt"
+          (cd "$RUNNER_TEMP/cpa" && sha256sum --check --ignore-missing checksums.txt && tar -xzf CLIProxyAPI_8.0.69_linux_amd64.tar.gz)
+          export CPA_BINARY="$RUNNER_TEMP/cpa/cli-proxy-api"
+          export TMPDIR="$RUNNER_TEMP/quota-tests"
+          python3 scripts/quota-native-e2e.py
+          python3 scripts/quota-collector-e2e.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tea-quota-linux-amd64-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            plugins/tea-quota-router/tea-quota-router.so
+            plugins/tea-combos/tea-combos.so
+            evidence/native-e2e.json
+            evidence/collector-e2e.json
