@@ -109,11 +109,11 @@ func TestUnclassifiedAndConfigClaudeCodexNeverProbed(t *testing.T) {
 	h := newHarness(t)
 	inv := func(context.Context) ([]pluginapi.HostAuthFileEntry, []pluginapi.HostAuthModels, error) {
 		return []pluginapi.HostAuthFileEntry{
-				{ID: "mystery", AuthIndex: "ai-claude-1", Provider: "claude"}, // no type, no .json evidence
-			}, []pluginapi.HostAuthModels{
-				{ID: "claude:apikey:0123456789ab", AuthIndex: "ai-claude-key", Provider: "claude", Models: []string{"claude-sonnet-4"}},
-				{ID: "codex:apikey:0123456789ab", AuthIndex: "ai-codex-1", Provider: "codex", Models: []string{"gpt-5"}},
-			}, nil
+			{ID: "mystery", AuthIndex: "ai-claude-1", Provider: "claude"}, // no type, no .json evidence
+		}, []pluginapi.HostAuthModels{
+			{ID: "claude:apikey:0123456789ab", AuthIndex: "ai-claude-key", Provider: "claude", Models: []string{"claude-sonnet-4"}},
+			{ID: "codex:apikey:0123456789ab", AuthIndex: "ai-codex-1", Provider: "codex", Models: []string{"gpt-5"}},
+		}, nil
 	}
 	snap, health, err := h.run(quota.Snapshot{}, inv)
 	if err != nil {
