@@ -37,6 +37,7 @@ func TestOffModeDoesNotRegisterScheduler(t *testing.T) {
 }
 
 func TestNativeRegistrationAndRoutes(t *testing.T) {
+	defer shutdown()
 	cfg := []byte("dataDir: " + t.TempDir() + "\n")
 	in, _ := json.Marshal(map[string]any{"config_yaml": cfg})
 	raw, err := abiHandleMethod(pluginabi.MethodPluginRegister, in)
@@ -63,5 +64,51 @@ func TestNativeRegistrationAndRoutes(t *testing.T) {
 	}
 	if !json.Valid(raw) {
 		t.Fatal("invalid routes")
+	}
+}
+
+func registerCaps(t *testing.T, method, extra string) map[string]bool {
+	t.Helper()
+	defer shutdown()
+	cfg := []byte("dataDir: " + t.TempDir() + "\n" + extra)
+	in, _ := json.Marshal(map[string]any{"config_yaml": cfg})
+	raw, err := abiHandleMethod(method, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Result struct {
+			Capabilities map[string]bool `json:"capabilities"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatal(err)
+	}
+	return env.Result.Capabilities
+}
+
+func TestAcrossPrioritiesAdvertisement(t *testing.T) {
+	cases := []struct {
+		name, cfg      string
+		scheduler, ack bool
+	}{
+		{"default shadow", "", true, false},
+		{"flag false active", "schedulerMode: active\nquotaAcrossPriorities: false\n", true, false},
+		{"flag true shadow", "quotaAcrossPriorities: true\n", true, true},
+		{"flag true active", "schedulerMode: active\nquotaAcrossPriorities: true\n", true, true},
+		{"flag true off", "schedulerMode: off\nquotaAcrossPriorities: true\n", false, false},
+	}
+	for _, method := range []string{pluginabi.MethodPluginRegister, pluginabi.MethodPluginReconfigure} {
+		for _, c := range cases {
+			t.Run(method+"/"+c.name, func(t *testing.T) {
+				caps := registerCaps(t, method, c.cfg)
+				if caps["scheduler"] != c.scheduler {
+					t.Errorf("scheduler=%v want %v", caps["scheduler"], c.scheduler)
+				}
+				if caps["scheduler_across_priorities"] != c.ack {
+					t.Errorf("scheduler_across_priorities=%v want %v", caps["scheduler_across_priorities"], c.ack)
+				}
+			})
+		}
 	}
 }

@@ -56,6 +56,8 @@ jobs:
           export TMPDIR="$RUNNER_TEMP/quota-tests"
           python3 scripts/quota-native-e2e.py
           python3 scripts/quota-collector-e2e.py
+          python3 scripts/quota-routing-e2e.py
+          python3 scripts/quota-subscription-e2e.py
 
       - uses: actions/upload-artifact@v4
         with:
@@ -66,3 +68,5 @@ jobs:
             plugins/tea-combos/tea-combos.so
             evidence/native-e2e.json
             evidence/collector-e2e.json
+            evidence/quota-routing-e2e.json
+            evidence/quota-subscription-e2e.json

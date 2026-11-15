@@ -19,6 +19,17 @@ const (
 	StrategyQuotaAware = "quota-aware-round-robin"
 )
 
+const (
+	// AccountStrategyInherit leaves account selection to CPA core (no pin).
+	AccountStrategyInherit = "inherit"
+	// AccountStrategyRoundRobin rotates equally across the quota accounts of a member's pool.
+	AccountStrategyRoundRobin = "round-robin"
+	// AccountStrategyQuotaAware weights quota accounts of a member's pool by AccountScore.
+	AccountStrategyQuotaAware = "quota-aware-round-robin"
+	// maxAccountAttempts bounds how many credentials one member may try per request.
+	maxAccountAttempts = 8
+)
+
 // Member is one upstream model a combo can execute.
 type Member struct {
 	Model     string  `json:"model" yaml:"model"`
@@ -26,6 +37,38 @@ type Member struct {
 	Weight    float64 `json:"weight,omitempty" yaml:"weight,omitempty"`
 	Role      string  `json:"role,omitempty" yaml:"role,omitempty"`
 	QuotaPool string  `json:"quotaPool,omitempty" yaml:"quotaPool,omitempty"`
+	// AccountStrategy overrides the combo account policy for this member. Empty means the combo
+	// policy; "inherit" means unpinned core selection.
+	AccountStrategy string `json:"accountStrategy,omitempty" yaml:"accountStrategy,omitempty"`
+	// AccountPool is the explicit eligibility boundary for account pinning. It is distinct from
+	// QuotaPool, which only shapes member weighting and never grants permission.
+	AccountPool string `json:"accountPool,omitempty" yaml:"accountPool,omitempty"`
+}
+
+// EffectiveAccountStrategy resolves the member override against the combo policy. The result is
+// "" or "inherit" for core behaviour, otherwise an explicit pinning strategy.
+func (m Member) EffectiveAccountStrategy(combo Combo) string {
+	if m.AccountStrategy != "" {
+		return m.AccountStrategy
+	}
+	return combo.AccountStrategy
+}
+
+// ExplicitAccountStrategy reports whether the member pins accounts itself.
+func (m Member) ExplicitAccountStrategy(combo Combo) bool {
+	switch m.EffectiveAccountStrategy(combo) {
+	case AccountStrategyRoundRobin, AccountStrategyQuotaAware:
+		return true
+	}
+	return false
+}
+
+func validAccountStrategy(strategy string) bool {
+	switch strategy {
+	case "", AccountStrategyInherit, AccountStrategyRoundRobin, AccountStrategyQuotaAware:
+		return true
+	}
+	return false
 }
 
 // Combo is a named set of members with a selection strategy.
@@ -67,6 +110,8 @@ func (c Combo) Normalize() Combo {
 		member.Provider = strings.TrimSpace(member.Provider)
 		member.Role = strings.TrimSpace(member.Role)
 		member.QuotaPool = strings.TrimSpace(member.QuotaPool)
+		member.AccountStrategy = strings.TrimSpace(member.AccountStrategy)
+		member.AccountPool = strings.TrimSpace(member.AccountPool)
 		members = append(members, member)
 	}
 	c.Members = members
@@ -75,8 +120,8 @@ func (c Combo) Normalize() Combo {
 
 // Validate rejects combos that could never be routed unambiguously.
 func (c Combo) Validate() error {
-	if c.AccountStrategy != "" && c.AccountStrategy != "inherit" {
-		return fmt.Errorf("combo-local accountStrategy %q is unsupported; use the provider account scheduler", c.AccountStrategy)
+	if !validAccountStrategy(c.AccountStrategy) {
+		return fmt.Errorf("combo %q: unknown accountStrategy %q (want inherit, %s or %s)", c.Name, c.AccountStrategy, AccountStrategyRoundRobin, AccountStrategyQuotaAware)
 	}
 	if c.Name == "" {
 		return fmt.Errorf("combo name is required")
@@ -105,6 +150,18 @@ func (c Combo) Validate() error {
 		}
 		if member.Model == "" {
 			return fmt.Errorf("combo %q: member %d has an empty model", c.Name, index)
+		}
+		if !validAccountStrategy(member.AccountStrategy) {
+			return fmt.Errorf("combo %q: member %d has unknown accountStrategy %q", c.Name, index, member.AccountStrategy)
+		}
+		// accountPool is the pin boundary: explicit strategies require it and it is meaningless
+		// (and therefore rejected) for unpinned members. quotaPool never substitutes for it.
+		explicit := member.ExplicitAccountStrategy(c)
+		if explicit && member.AccountPool == "" {
+			return fmt.Errorf("combo %q: member %d (%s) uses accountStrategy %q and requires accountPool", c.Name, index, member.Model, member.EffectiveAccountStrategy(c))
+		}
+		if !explicit && member.AccountPool != "" {
+			return fmt.Errorf("combo %q: member %d (%s) sets accountPool without an explicit accountStrategy", c.Name, index, member.Model)
 		}
 	}
 	if c.CooldownSeconds != nil && *c.CooldownSeconds < 0 {

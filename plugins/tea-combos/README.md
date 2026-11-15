@@ -80,8 +80,28 @@ Runtime edits always win and are never overwritten by config.
   retryable failure the executor continues around the ring, so every member is tried at most once.
 - `failover` — ordered from the first member on every request.
 
-An unknown strategy is a configuration error. Quota-aware routing is out of scope; the `Selector`
-interface is the seam for it.
+An unknown strategy is a configuration error. `weighted-round-robin` uses positive member `weight`; `quota-aware-round-robin` adjusts those weights by observed allowance/reset pressure from `quotaPool`. Primary members are selected before any `role: fallback` members. Cross-provider quota percentages are not token-equivalent.
+
+### Independent account selection (v0.4.0)
+
+`accountStrategy` is independent of member `strategy`: `inherit` leaves account choice to CPA (including any installed provider scheduler), `round-robin` distributes equally across quota accounts, and `quota-aware-round-robin` weights them by usable quota/reset pressure. Numeric account priority is intentionally ignored for explicit strategies. A member may override `accountStrategy`; omitted means the combo default, explicit `inherit` means no account pin.
+
+Every explicitly routed member requires `accountPool`, a snapshot pool defining its permitted accounts. This is separate from `quotaPool`, which is observation-only. Configure `quotaSnapshotPath` and `quotaMaxAgeSeconds` (default 600) on the plugin. Missing/stale/empty pools fail closed; they never recover by dropping the pin. CPA still enforces caller/model restrictions, disabled state and core cooldowns on every pin. Explicit policies reject nested combo targets.
+
+```yaml
+strategy: quota-aware-round-robin
+accountStrategy: quota-aware-round-robin
+members:
+  - model: claude-sonnet
+    provider: claude
+    quotaPool: claude-subscriptions
+    accountPool: claude-subscriptions
+  - model: paid-model
+    role: fallback
+    accountStrategy: inherit
+```
+
+Credential IDs sharing an account ID count as one quota allocation. Retries interleave credentials across accounts, at most eight per member. Explicit account affinity uses caller/session/combo/member/pool context, binds only on success and is in-memory (not persisted across restart). Empty explicit-account streams retry; no retry occurs after a payload byte. Core-owned/inherited streams retain their existing behavior. The UI exposes separate member/account selectors and per-member pool/override controls.
 
 ## Failure behaviour
 

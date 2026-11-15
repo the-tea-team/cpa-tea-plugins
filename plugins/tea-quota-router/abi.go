@@ -130,7 +130,9 @@ func abiHandleMethod(method string, raw []byte) (result []byte, err error) {
 			return nil, err
 		}
 		p.startCollector(nativeInventoryWith(nativeHostCall))
-		return envelope(map[string]any{"schema_version": pluginabi.SchemaVersion, "metadata": pluginapi.Metadata{Name: "tea-quota-router", Version: "0.1.1", Author: "The Tea Team", GitHubRepository: "https://github.com/the-tea-team/cpa-tea-plugins"}, "capabilities": map[string]bool{"scheduler": p.configCopy().SchedulerMode != "off", "management_api": true, "usage_plugin": true}})
+		cfg := p.configCopy()
+		schedulerOn := cfg.SchedulerMode != "off"
+		return envelope(map[string]any{"schema_version": pluginabi.SchemaVersion, "metadata": pluginapi.Metadata{Name: "tea-quota-router", Version: "0.2.0", Author: "The Tea Team", GitHubRepository: "https://github.com/the-tea-team/cpa-tea-plugins"}, "capabilities": map[string]bool{"scheduler": schedulerOn, "scheduler_across_priorities": schedulerOn && cfg.QuotaAcrossPriorities, "management_api": true, "usage_plugin": true}})
 	case pluginabi.MethodPluginShutdown:
 		shutdown()
 		return envelope(map[string]any{})
@@ -178,8 +180,9 @@ func abiHandleMethod(method string, raw []byte) (result []byte, err error) {
 		mode := p.cfg.SchedulerMode
 		strategy := strategyFor(r, p.cfg.ProviderStrategies)
 		age := p.cfg.MaxAgeSeconds
+		across := p.cfg.QuotaAcrossPriorities
 		p.mu.RUnlock()
-		return envelope(p.scheduler.pick(r, p.snapshotCopy(), mode, strategy, time.Now(), time.Duration(age)*time.Second))
+		return envelope(p.scheduler.pickWith(r, p.snapshotCopy(), mode, strategy, time.Now(), time.Duration(age)*time.Second, across))
 	}
 	return nil, errors.New("unknown method")
 }

@@ -31,13 +31,13 @@ func TestMemberQuotaConfigurationRoundTrip(t *testing.T) {
 	}
 }
 
-func TestAccountStrategyRejectsUnsupported(t *testing.T) {
+func TestAccountStrategyRejectsUnknown(t *testing.T) {
 	var c Combo
-	if err := json.Unmarshal([]byte(`{"name":"x","accountStrategy":"round-robin"}`), &c); err != nil {
+	if err := json.Unmarshal([]byte(`{"name":"x","accountStrategy":"sticky"}`), &c); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Normalize().Validate(); err == nil || !strings.Contains(err.Error(), "unsupported") {
-		t.Fatalf("expected unsupported, got %v", err)
+	if err := c.Normalize().Validate(); err == nil || !strings.Contains(err.Error(), "accountStrategy") {
+		t.Fatalf("expected unknown accountStrategy, got %v", err)
 	}
 }
 

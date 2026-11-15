@@ -29,8 +29,8 @@ func snapOf(m map[string]acct) quota.Snapshot {
 	s := quota.Snapshot{SchemaVersion: 1}
 	for id, a := range m {
 		w := quota.Window{ID: "session", UsedFraction: a.used, ResetAt: a.reset, ObservedAt: a.obs}
-		s.Accounts = append(s.Accounts, quota.Account{ID: id, Provider: "codex", Windows: []quota.Window{w}})
-		s.Credentials = append(s.Credentials, quota.Credential{ID: id, AccountID: id, Provider: "codex"})
+		s.Accounts = append(s.Accounts, quota.Account{ID: id, Provider: "mock", Windows: []quota.Window{w}})
+		s.Credentials = append(s.Credentials, quota.Credential{ID: id, AccountID: id, Provider: "mock"})
 	}
 	return s
 }
@@ -38,11 +38,11 @@ func snapOf(m map[string]acct) quota.Snapshot {
 func fresh(used float64) acct { return acct{used: f(used), obs: affNow} }
 
 func cand(id string, prio int) pluginapi.SchedulerAuthCandidate {
-	return pluginapi.SchedulerAuthCandidate{ID: id, Priority: prio, Provider: "codex", Status: "active"}
+	return pluginapi.SchedulerAuthCandidate{ID: id, Priority: prio, Provider: "mock", Status: "active"}
 }
 
 func mkReq(model string, md map[string]any, cs ...pluginapi.SchedulerAuthCandidate) pluginapi.SchedulerPickRequest {
-	return pluginapi.SchedulerPickRequest{Provider: "codex", Providers: []string{"codex"}, Model: model, Options: pluginapi.SchedulerOptions{Metadata: md}, Candidates: cs}
+	return pluginapi.SchedulerPickRequest{Provider: "mock", Providers: []string{"mock"}, Model: model, Options: pluginapi.SchedulerOptions{Metadata: md}, Candidates: cs}
 }
 
 func sess(caller, session string) map[string]any {
@@ -140,7 +140,7 @@ func TestAffinityModelAndProviderScopeIsolated(t *testing.T) {
 	}
 	k1, _ := affinityKeyFor(mkReq("m", sess("c", "s")))
 	r := mkReq("m", sess("c", "s"))
-	r.Provider = "claude"
+	r.Provider = "other"
 	k2, _ := affinityKeyFor(r)
 	if k1 == k2 {
 		t.Fatal("provider scope must be part of key")

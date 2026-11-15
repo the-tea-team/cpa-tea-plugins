@@ -104,8 +104,11 @@ func (p *combosPlugin) executeStream(ctx context.Context, req pluginapi.Executor
 		return pluginapi.ExecutorStreamResponse{Headers: headers}, nil
 	}
 	go func() {
-		defer handle.Close()
-		if errPump := handle.Pump(ctx, streamID); errPump != nil {
+		errPump := handle.Pump(ctx, streamID)
+		// Release the host stream before telling the client the stream ended, so nothing in this
+		// goroutine touches host seams after the client-visible close.
+		handle.Close()
+		if errPump != nil {
 			pluginStreamClose(streamID, &pluginabi.Error{
 				Code:    "combo_stream_failed",
 				Message: errPump.Error(),
@@ -156,7 +159,19 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 			return -1, nil, nil, &comboError{Status: http.StatusRequestTimeout, Message: err.Error()}
 		}
 		member := combo.Members[index]
-		opened, err := hostModelExecuteStream(ctx, pluginapi.HostModelExecutionRequest{
+		if member.ExplicitAccountStrategy(combo) {
+			outcome := p.runAccountMemberStream(ctx, req, combo, member, emit, &trace)
+			if outcome.fatal != nil {
+				return -1, nil, nil, outcome.fatal
+			}
+			if outcome.served {
+				p.affinity.Bind(affinityKey, index, combo)
+				return index, outcome.headers, outcome.handle, nil
+			}
+			lastStatus, lastMessage = outcome.status, outcome.message
+			continue
+		}
+		primed := primeStream(ctx, pluginapi.HostModelExecutionRequest{
 			EntryProtocol:  req.SourceFormat,
 			ExitProtocol:   req.Format,
 			Model:          member.Model,
@@ -166,75 +181,33 @@ func (p *combosPlugin) executeComboStream(ctx context.Context, req pluginapi.Exe
 			Query:          req.Query,
 			ForcedProvider: member.Provider,
 		})
-
-		status := 0
-		retryable := false
-		message := ""
-		if err != nil {
-			status, retryable = streamErrorStatus(err)
-			message = err.Error()
-		} else {
-			status = opened.StatusCode
-			if status == 0 {
-				status = http.StatusOK
+		if !primed.ok {
+			trace = append(trace, attemptTrace{Member: member.Model, Status: primed.status, Error: primed.message, Retryable: primed.retryable})
+			if !memberFailure(primed.status, primed.message) {
+				return -1, nil, nil, &comboError{Status: primed.status, Message: primed.message}
 			}
-			retryable = retryableStatus(status)
-			if status >= http.StatusBadRequest {
-				hostModelStreamClose(opened.StreamID)
-				message = fmt.Sprintf("host model status %d", status)
-			} else if strings.TrimSpace(opened.StreamID) == "" {
-				status = http.StatusBadGateway
-				retryable = true
-				message = "host model stream returned an empty stream id"
-			}
-		}
-
-		if err != nil || status >= http.StatusBadRequest || strings.TrimSpace(opened.StreamID) == "" {
-			trace = append(trace, attemptTrace{Member: member.Model, Status: status, Error: message, Retryable: retryable})
-			if !memberFailure(status, message) {
-				return -1, nil, nil, &comboError{Status: status, Message: message}
-			}
-			var headers map[string][]string
-			if opened != nil {
-				headers = opened.Headers
-			}
-			p.cooldown.Cool(combo.Name, member, p.coolDuration(combo, headers, message))
-			lastStatus = status
-			lastMessage = message
+			p.cooldown.Cool(combo.Name, member, p.coolDuration(combo, primed.headers, primed.message))
+			lastStatus = primed.status
+			lastMessage = primed.message
 			continue
 		}
-
-		first, done, readErr := readUntilFirstPayload(ctx, opened.StreamID)
-		if readErr != nil {
-			hostModelStreamClose(opened.StreamID)
-			status, retryable = streamErrorStatus(readErr)
-			message = readErr.Error()
-			trace = append(trace, attemptTrace{Member: member.Model, Status: status, Error: message, Retryable: retryable})
-			if !memberFailure(status, message) {
-				return -1, nil, nil, &comboError{Status: status, Message: message}
-			}
-			p.cooldown.Cool(combo.Name, member, p.coolDuration(combo, opened.Headers, message))
-			lastStatus = status
-			lastMessage = message
-			continue
-		}
-		trace = append(trace, attemptTrace{Member: member.Model, Status: status, Retryable: false})
+		trace = append(trace, attemptTrace{Member: member.Model, Status: primed.status, Retryable: false})
 		p.cooldown.Clear(combo.Name, member)
-		handle := &comboStreamHandle{streamID: opened.StreamID}
-		if len(first) == 0 && done {
+		handle := &comboStreamHandle{streamID: primed.opened.StreamID}
+		if len(primed.first) == 0 && primed.done {
 			// A clean empty stream is a successful member: nothing to forward, no fallback.
 			handle.Close()
 			p.affinity.Bind(affinityKey, index, combo)
-			return index, opened.Headers, nil, nil
+			return index, primed.opened.Headers, nil, nil
 		}
-		if len(first) > 0 {
-			if errEmit := emit(first); errEmit != nil {
+		if len(primed.first) > 0 {
+			if errEmit := emit(primed.first); errEmit != nil {
 				handle.Close()
 				return -1, nil, nil, &comboError{Status: http.StatusBadGateway, Message: errEmit.Error()}
 			}
 		}
 		p.affinity.Bind(affinityKey, index, combo)
-		return index, opened.Headers, handle, nil
+		return index, primed.opened.Headers, handle, nil
 	}
 
 	if lastStatus == 0 {

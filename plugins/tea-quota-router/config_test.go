@@ -16,3 +16,17 @@ func TestConfigSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestQuotaAcrossPrioritiesFlag(t *testing.T) {
+	c, err := parseConfig([]byte("dataDir: /safe\n"))
+	if err != nil || c.QuotaAcrossPriorities {
+		t.Fatalf("default must be false: %+v %v", c, err)
+	}
+	c, err = parseConfig([]byte("dataDir: /safe\nquotaAcrossPriorities: true\n"))
+	if err != nil || !c.QuotaAcrossPriorities {
+		t.Fatalf("explicit true must parse: %+v %v", c, err)
+	}
+	if _, err = parseConfig([]byte("dataDir: /safe\nquotaAcrossPriorities: maybe\n")); err == nil {
+		t.Fatal("non-bool flag accepted")
+	}
+}

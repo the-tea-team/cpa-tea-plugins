@@ -20,7 +20,7 @@ const (
 	defaultStateFileName = "tea-combos.state.json"
 )
 
-var pluginVersion = "0.3.0"
+var pluginVersion = "0.4.0"
 
 // defaultCooldownSeconds parks a member after a member-side failure when neither the combo nor
 // the plugin config overrides the window.
@@ -43,13 +43,15 @@ func (e *comboError) Error() string { return e.Message }
 
 // combosPlugin implements ModelRouter and Executor for named model combos.
 type combosPlugin struct {
-	store          *Store
-	roundRobin     *roundRobinSelector
-	weighted       *weightedSelector
-	affinity       *Affinity
-	cooldown       *cooldownTracker
-	cooldownWindow time.Duration
-	maxCooldown    time.Duration
+	store           *Store
+	roundRobin      *roundRobinSelector
+	weighted        *weightedSelector
+	accounts        *accountRouter
+	accountBindings *accountBindings
+	affinity        *Affinity
+	cooldown        *cooldownTracker
+	cooldownWindow  time.Duration
+	maxCooldown     time.Duration
 }
 
 // newCombosPlugin loads the state file, merges seed combos into it, and returns a ready plugin.
@@ -84,14 +86,17 @@ func newCombosPlugin(configYAML []byte, pluginDir string) (*combosPlugin, error)
 			maxCooldown = 0
 		}
 	}
+	weighted := newWeightedSelector(cfg.QuotaSnapshotPath, cfg.QuotaMaxAgeSeconds)
 	return &combosPlugin{
-		store:          store,
-		roundRobin:     newRoundRobinSelector(),
-		weighted:       newWeightedSelector(cfg.QuotaSnapshotPath, cfg.QuotaMaxAgeSeconds),
-		affinity:       newAffinity(bindings, store.SaveBindings),
-		cooldown:       newCooldownTracker(),
-		cooldownWindow: window,
-		maxCooldown:    maxCooldown,
+		store:           store,
+		roundRobin:      newRoundRobinSelector(),
+		weighted:        weighted,
+		accounts:        newAccountRouter(weighted),
+		accountBindings: newAccountBindings(nil),
+		affinity:        newAffinity(bindings, store.SaveBindings),
+		cooldown:        newCooldownTracker(),
+		cooldownWindow:  window,
+		maxCooldown:     maxCooldown,
 	}, nil
 }
 
@@ -263,6 +268,17 @@ func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRe
 
 	for _, index := range order {
 		member := combo.Members[index]
+		if member.ExplicitAccountStrategy(combo) {
+			outcome := p.runAccountMember(ctx, req, combo, member, &trace)
+			if outcome.fatal != nil {
+				return pluginapi.ExecutorResponse{}, -1, outcome.fatal
+			}
+			if outcome.served {
+				return outcome.response, index, nil
+			}
+			lastStatus, lastMessage = outcome.status, outcome.message
+			continue
+		}
 		payload := rewriteModel(req.Payload, member.Model)
 		result, err := hostModelExecute(ctx, pluginapi.HostModelExecutionRequest{
 			EntryProtocol:  req.SourceFormat,
@@ -274,37 +290,14 @@ func (p *combosPlugin) runAttempts(ctx context.Context, req pluginapi.ExecutorRe
 			Query:          req.Query,
 			ForcedProvider: member.Provider,
 		})
-
-		status := 0
-		retryable := false
-		message := ""
-		if err != nil {
-			var hostErr *hostError
-			if errors.As(err, &hostErr) {
-				status = hostErr.Status
-				if status == 0 {
-					status = http.StatusBadGateway
-				}
-				retryable = hostErr.Retryable || retryableStatus(status)
-			} else {
-				status = http.StatusBadGateway
-				retryable = true
-			}
-			message = err.Error()
-		} else {
-			status = result.StatusCode
-			if status == 0 {
-				status = http.StatusOK
-			}
-			retryable = retryableStatus(status)
-		}
+		status, retryable, message := classifyExecute(result, err)
 
 		trace = append(trace, attemptTrace{Member: member.Model, Status: status, Error: message, Retryable: retryable})
 		if !memberFailure(status, message) {
-			p.cooldown.Clear(combo.Name, member)
-			if err != nil {
+			if fatalExecute(err, status) {
 				return pluginapi.ExecutorResponse{}, -1, &comboError{Status: status, Message: message}
 			}
+			p.cooldown.Clear(combo.Name, member)
 			return pluginapi.ExecutorResponse{Payload: result.Body, Headers: result.Headers}, index, nil
 		}
 		// The member itself failed (capacity, quota, credential, transient): park it, tell the

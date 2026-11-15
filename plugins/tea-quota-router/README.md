@@ -1,6 +1,6 @@
 # Tea Capacity & Resets
 
-Native CPA plugin `tea-quota-router` v0.1.1. CPA SDK pinned to v8.0.69. Linux is the supported snapshot-sharing target.
+Native CPA plugin `tea-quota-router` v0.2.0. CPA SDK pinned to v8.0.69. Linux is the supported snapshot-sharing target.
 
 ## Included
 
@@ -11,7 +11,7 @@ Native CPA plugin `tea-quota-router` v0.1.1. CPA SDK pinned to v8.0.69. Linux is
 - Optional OpenAI/Anthropic organization cost collection with separate admin access. These are spend reports, not prepaid balance. OpenRouter account-credit parser exists; account-credit polling is not wired in this release.
 - In-process credential-attributed gateway usage collection into SQLite (not a second usage-queue consumer), 30-day retention, and nullable cost estimates only from explicitly configured per-million prices.
 - Plugin-owned account affinity uses a hashed caller/model/session tuple when CPA supplies the required metadata; 60-minute idle TTL and bounded entries. Missing caller/session metadata does not create a shared binding. Core affinity lookup is unavailable while any plugin scheduler is installed. Native direct-chat prompt_cache_key affinity is proven; broader nested-combo/caller coverage remains a rollout gate.
-- Shadow-default, provider-opt-in quota-aware credential scheduler. Core-provided candidates and priority tiers remain authoritative. Selection weights are request-share heuristics, not guaranteed token allocation.
+- Shadow-default, provider-opt-in quota-aware credential scheduler. Core-provided eligibility remains authoritative. `quotaAcrossPriorities: true` intentionally ignores numeric account priority (default false preserves tiers). Selection weights are request-share heuristics, not guaranteed token allocation.
 - Embedded `/v0/resource/plugins/tea-quota-router/capacity` dashboard; all data requires management authentication.
 - Transactional `state-v1.json` owns observations, overrides and materialized state. The shared `snapshot-v1.json` and legacy `overrides.json` are derived exports; export failure is reported and repaired on restart.
 
@@ -24,6 +24,7 @@ plugins:
       enabled: true
       dataDir: /var/lib/cliproxyapi/tea-quota-router
       schedulerMode: off
+      quotaAcrossPriorities: false
       providerStrategies:
         claude: quota-aware-round-robin
       managementURL: http://127.0.0.1:8317
@@ -49,8 +50,9 @@ CPAMP v1.14.10 authenticates management proxy calls by header, not a reusable if
 - `schedulerMode`: `off`, `shadow` (default), or `active`. In v0.1.1, **off does not register the scheduler capability**: collection and usage work without occupying the host scheduler slot. Use off for observer-only rollout. Shadow and active register a scheduler, so check existing plugin schedulers before opting in. Provider strategy defaults to inherit. Restart CPA when changing modes; active routing remains an explicit operator decision.
 - `tea-combos` v0.3.0 adds **member/model** `weighted-round-robin` and `quota-aware-round-robin`, positive `weight`, explicit `role: fallback`, and `quotaPool` (an observation-pool reference).
 - **`quotaPool` does not restrict credential eligibility.** It is not a paid/subscription security boundary. Only the configured core account policies restrict actual accounts.
-- **Combo-local account policies remain blocked on CPA v8.0.69:** native AuthID pinning bypasses normal priority selection. Non-`inherit` `accountStrategy` is rejected, not silently ignored. Provider-level account strategy and combo-level member strategy can be configured independently, but separate account policies for two combos sharing the same model are NOT implemented.
-- Read-only Claude/Codex endpoint probes succeeded separately, but installed-collector live response verification, production rollout, native account-affinity metadata coverage, concurrency-pressure behavior, and account-credit polling require additional acceptance work. Do not interpret synthetic E2E as proof of these paths.
+- `tea-combos` v0.4.0 supports combo/member `accountStrategy` with explicit `accountPool`, separately from member weighting. Native same-model concurrent RR/quota policies, pool isolation and caller denial are exercised in `scripts/quota-routing-e2e.py`. Numeric priority is intentionally superseded for explicit account policies.
+- Claude/Codex quota routes stay on positively classified OAuth subscriptions when available or present for that model; if core filters those subscriptions out, the plugin rejects rather than silently spending on paid keys. A known explicit API pin or positively API-only model still inherits core. `scripts/quota-subscription-e2e.py` exercises exhaustion and core-filtered subscription cases.
+- Production observer collection was verified separately. Native tests are synthetic and do not replace post-deploy live routing verification or a multi-day soak. No concurrency-pressure scoring or account-credit polling is included.
 - Unknown API billing type stays unknown. Some API keys are subscriptions; authentication mechanism alone is not evidence of billing type.
 - Some host IDs contain filenames/labels and are NOT guaranteed opaque or PII-free. They are exposed only to management-authorized viewers, never public routes. Tokens/keys and raw upstream bodies are not persisted.
 - Secure snapshot reads fail closed on non-Linux platforms in this release.

@@ -125,7 +125,7 @@ def main():
   for i,a in enumerate(snap['accounts']):
    for w in a['windows']:w['usedFraction']=.8 if i==0 else .2
   (run/'fixture.json').write_text(json.dumps(snap));assert call('/v0/management/plugins/tea-quota-router/refresh','POST',{})[0]==202
-  report={'syntheticOnly':True,'checks':checks,'passed':sum(checks.values()),'total':len(checks),'comboCounts':counts,'nativeAffinityObserved':affinity_observed,'lastDecisions':summary['routing']['decisions'][-2:],'url':base+'/v0/resource/plugins/tea-quota-router/capacity','runDir':str(run),'notProvenByThisHarness':['real provider collection','CPAMP integration (tested separately)','combo-local account policies blocked by priority gate']}
+  report={'syntheticOnly':True,'checks':checks,'passed':sum(checks.values()),'total':len(checks),'comboCounts':counts,'nativeAffinityObserved':affinity_observed,'lastDecisions':summary['routing']['decisions'][-2:],'url':base+'/v0/resource/plugins/tea-quota-router/capacity','runDir':str(run),'notProvenByThisHarness':['real provider collection','CPAMP integration (tested separately)','combo-local account policies (covered by quota-routing-e2e.py)']}
   out=pathlib.Path(args.output);out.parent.mkdir(parents=True,exist_ok=True);out.write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2),flush=True)
   assert all(checks.values()),'E2E checks failed'
   if args.serve:
