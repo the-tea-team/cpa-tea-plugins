@@ -1,0 +1,91 @@
+{
+  "syntheticOnly": true,
+  "fixtureSnapshotPathUsed": false,
+  "checks": {
+    "native_plugin_ready": true,
+    "summary_requires_auth": true,
+    "refresh_requires_auth": true,
+    "native_oauth_inventory": true,
+    "native_api_key_inventory": true,
+    "background_collection": true,
+    "reported_plans": true,
+    "timestamps_and_windows": true,
+    "weighted_pool": true,
+    "api_key_not_oauth_probed": true,
+    "no_secrets_in_snapshot": true,
+    "refresh_accepted": true,
+    "refresh_inflight": true,
+    "refresh_coalesced": true
+  },
+  "passed": 14,
+  "total": 14,
+  "inventory": [
+    {
+      "provider": "claude",
+      "authType": "oauth",
+      "hasAuthIndex": true
+    },
+    {
+      "provider": "claude",
+      "authType": "oauth",
+      "hasAuthIndex": true
+    },
+    {
+      "provider": "openai-compatible-mock",
+      "authType": "api_key",
+      "hasAuthIndex": true
+    }
+  ],
+  "accountStatuses": [
+    {
+      "provider": "claude",
+      "status": "ok",
+      "plan": "pro"
+    },
+    {
+      "provider": "claude",
+      "status": "ok",
+      "plan": "max5"
+    },
+    {
+      "provider": "openai-compatible-mock",
+      "status": "unsupported",
+      "plan": ""
+    }
+  ],
+  "mockCallCount": 8,
+  "poolSummary": [
+    {
+      "id": "claude-pool",
+      "label": "Claude synthetic",
+      "provider": "claude",
+      "windowId": "five-hour",
+      "remainingFraction": 0.7000000000000001,
+      "totalAccounts": 2,
+      "measuredAccounts": 2,
+      "usableAccounts": 2,
+      "unknownAccounts": 0,
+      "totalCapacity": 6,
+      "measuredCapacity": 6,
+      "usableCapacity": 6,
+      "estimated": true,
+      "nextResetAt": "2026-11-15T20:37:13.754485Z"
+    },
+    {
+      "id": "claude-pool",
+      "label": "Claude synthetic",
+      "provider": "claude",
+      "windowId": "seven-day",
+      "remainingFraction": 0.7000000000000001,
+      "totalAccounts": 2,
+      "measuredAccounts": 2,
+      "usableAccounts": 2,
+      "unknownAccounts": 0,
+      "totalCapacity": 6,
+      "measuredCapacity": 6,
+      "usableCapacity": 6,
+      "estimated": true,
+      "nextResetAt": "2026-11-15T20:37:13.754485Z"
+    }
+  ]
+}

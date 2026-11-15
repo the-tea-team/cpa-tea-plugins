@@ -1,0 +1,92 @@
+[
+  {
+    "module": "internal/tea",
+    "command": "go test -json ./...",
+    "exit": 0,
+    "testsPassed": 64
+  },
+  {
+    "module": "internal/tea",
+    "command": "go test -race ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "internal/tea",
+    "command": "go vet ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "plugins/tea-quota-router",
+    "command": "go test -json ./...",
+    "exit": 0,
+    "testsPassed": 214
+  },
+  {
+    "module": "plugins/tea-quota-router",
+    "command": "go test -race ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "plugins/tea-quota-router",
+    "command": "go vet ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "plugins/tea-combos",
+    "command": "go test -json ./...",
+    "exit": 0,
+    "testsPassed": 216
+  },
+  {
+    "module": "plugins/tea-combos",
+    "command": "go test -race ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "plugins/tea-combos",
+    "command": "go vet ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "plugins/tea-keys",
+    "command": "go test -json ./...",
+    "exit": 0,
+    "testsPassed": 94
+  },
+  {
+    "module": "plugins/tea-keys",
+    "command": "go test -race ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "plugins/tea-keys",
+    "command": "go vet ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "plugins/tea-metrics",
+    "command": "go test -json ./...",
+    "exit": 0,
+    "testsPassed": 4
+  },
+  {
+    "module": "plugins/tea-metrics",
+    "command": "go test -race ./...",
+    "exit": 0,
+    "testsPassed": null
+  },
+  {
+    "module": "plugins/tea-metrics",
+    "command": "go vet ./...",
+    "exit": 0,
+    "testsPassed": null
+  }
+]

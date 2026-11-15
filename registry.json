@@ -6,7 +6,7 @@
       "name": "Tea Combos",
       "description": "Named model combos with round-robin and failover across providers, executed through CPA's own provider path.",
       "author": "The Tea Team",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "repository": "https://github.com/the-tea-team/cpa-tea-plugins",
       "homepage": "https://github.com/the-tea-team/cpa-tea-plugins",
       "license": "MIT",
@@ -46,6 +46,22 @@
         "metrics",
         "observability",
         "dashboard"
+      ]
+    },
+    {
+      "id": "tea-quota-router",
+      "name": "Tea Capacity & Resets",
+      "description": "Capacity-weighted subscription pools, reset runway, API-account usage and opt-in quota-aware credential scheduling.",
+      "author": "The Tea Team",
+      "version": "0.1.0",
+      "repository": "https://github.com/the-tea-team/cpa-tea-plugins",
+      "homepage": "https://github.com/the-tea-team/cpa-tea-plugins",
+      "license": "MIT",
+      "tags": [
+        "quota",
+        "usage",
+        "dashboard",
+        "routing"
       ]
     }
   ]

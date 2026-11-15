@@ -27,3 +27,6 @@ auths/
 # Plugin-owned runtime state
 **/tea-combos.state.json
 plugins/*/tea-metrics
+plugins/*/tea-quota-router
+__pycache__/
+*.pyc

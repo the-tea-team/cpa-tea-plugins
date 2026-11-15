@@ -183,9 +183,12 @@ th { font-weight: 600; }
         <select id="combo-strategy" name="strategy">
           <option value="round-robin">round-robin</option>
           <option value="failover">failover</option>
+          <option value="weighted-round-robin">weighted-round-robin</option>
+          <option value="quota-aware-round-robin">quota-aware-round-robin</option>
         </select>
       </label>
 
+      <p class="muted">Provider account scheduling is separate; combo-local account scheduling is unavailable. Observation pools affect scoring only and do not restrict credentials.</p>
       <fieldset>
         <legend>Members</legend>
         <p class="muted">Members are tried in this order (round-robin rotates the starting point).</p>
@@ -385,7 +388,17 @@ th { font-weight: 600; }
       row.appendChild(enabledCell);
 
       var actionsCell = document.createElement("td");
-      var actions = document.createElement("div");
+      var weightLabel = document.createElement("label");
+    weightLabel.textContent = "Weight";
+    var weight = document.createElement("input"); weight.type = "number"; weight.min = "0.001"; weight.step = "any"; weight.className = "member-weight"; weight.value = (member && member.weight) || 1; weightLabel.appendChild(weight); row.appendChild(weightLabel);
+    var roleLabel = document.createElement("label"); roleLabel.textContent = "Role";
+    var role = document.createElement("select"); role.className = "member-role";
+    ["primary", "fallback"].forEach(function(v) { var o = document.createElement("option"); o.value = v; o.textContent = v; role.appendChild(o); });
+    role.value = (member && member.role) || "primary"; roleLabel.appendChild(role); row.appendChild(roleLabel);
+    var poolLabel = document.createElement("label"); poolLabel.textContent = "Observation pool ID (optional)";
+    var pool = document.createElement("input"); pool.type = "text"; pool.className = "member-pool"; pool.value = (member && member.quotaPool) || ""; poolLabel.appendChild(pool); row.appendChild(poolLabel);
+
+    var actions = document.createElement("div");
       actions.className = "actions";
       var edit = document.createElement("button");
       edit.type = "button";
@@ -507,6 +520,9 @@ th { font-weight: 600; }
       var member = { model: row.querySelector(".member-model").value.trim() };
       var provider = row.querySelector(".member-provider").value.trim();
       if (provider) { member.provider = provider; }
+      member.weight = Number(row.querySelector(".member-weight").value);
+      member.role = row.querySelector(".member-role").value;
+      var pool = row.querySelector(".member-pool").value.trim(); if (pool) { member.quotaPool = pool; }
       return member;
     });
     return {
