@@ -1,6 +1,6 @@
 # Tea Capacity & Resets
 
-Native CPA plugin `tea-quota-router` v0.1.0. CPA SDK pinned to v8.0.69. Linux is the supported snapshot-sharing target.
+Native CPA plugin `tea-quota-router` v0.1.1. CPA SDK pinned to v8.0.69. Linux is the supported snapshot-sharing target.
 
 ## Included
 
@@ -23,7 +23,7 @@ plugins:
     tea-quota-router:
       enabled: true
       dataDir: /var/lib/cliproxyapi/tea-quota-router
-      schedulerMode: shadow
+      schedulerMode: off
       providerStrategies:
         claude: quota-aware-round-robin
       managementURL: http://127.0.0.1:8317
@@ -46,7 +46,7 @@ CPAMP v1.14.10 authenticates management proxy calls by header, not a reusable if
 
 ## Routing boundary and explicit limitations
 
-- `schedulerMode`: `off`, `shadow` (default), or `active`. Provider strategy defaults to inherit. Enabling active routing is an operator decision, not automatic on plugin installation.
+- `schedulerMode`: `off`, `shadow` (default), or `active`. In v0.1.1, **off does not register the scheduler capability**: collection and usage work without occupying the host scheduler slot. Use off for observer-only rollout. Shadow and active register a scheduler, so check existing plugin schedulers before opting in. Provider strategy defaults to inherit. Restart CPA when changing modes; active routing remains an explicit operator decision.
 - `tea-combos` v0.3.0 adds **member/model** `weighted-round-robin` and `quota-aware-round-robin`, positive `weight`, explicit `role: fallback`, and `quotaPool` (an observation-pool reference).
 - **`quotaPool` does not restrict credential eligibility.** It is not a paid/subscription security boundary. Only the configured core account policies restrict actual accounts.
 - **Combo-local account policies remain blocked on CPA v8.0.69:** native AuthID pinning bypasses normal priority selection. Non-`inherit` `accountStrategy` is rejected, not silently ignored. Provider-level account strategy and combo-level member strategy can be configured independently, but separate account policies for two combos sharing the same model are NOT implemented.
@@ -69,4 +69,4 @@ The native E2E harness runs the released CPA v8.0.69 binary with real c-shared p
 
 ## Deployment/rollback
 
-No production deployment is included in this branch's test run. Back up service/config/state before an approved deployment. For store-managed plugins, update the version pin before placing the new `.so`; checksum-verify artifacts. Keep prior binaries outside CPA's plugin discovery directory. Roll back config and binary together; preserve the new data directory rather than opening it with an incompatible older schema. Shadow mode is the initial deployment mode.
+No production deployment is included in this branch's test run. Back up service/config/state before an approved deployment. For store-managed plugins, update the version pin before placing the new `.so`; checksum-verify artifacts. Keep prior binaries outside CPA's plugin discovery directory. Roll back config and binary together; preserve the new data directory rather than opening it with an incompatible older schema. Observer-only (`schedulerMode: off`) is the initial deployment mode. Enable shadow only after checking scheduler coexistence.
