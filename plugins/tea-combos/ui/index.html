@@ -104,24 +104,41 @@ th { font-weight: 600; }
 .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .member {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) minmax(120px, 1fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 8px;
   align-items: end;
-  margin-block-end: 8px;
+  margin-block-end: 10px;
+  padding: 8px;
+  border: 1px solid var(--panel-border, ButtonBorder);
+  border-radius: var(--radius, 6px);
 }
+.member label { margin-block-end: 0; }
+.member .hint { display: block; font-weight: 400; font-size: 0.85em; color: var(--muted-fg, GrayText); }
 .member .member-actions { display: flex; gap: 4px; padding-block-end: 1px; }
+.member-line { margin-block-end: 4px; }
 .editor-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-block-start: 12px; }
 [hidden] { display: none !important; }
-@media (max-width: 620px) {
+.header-desc { flex: 1 1 16rem; min-width: 0; white-space: normal; overflow-wrap: break-word; }
+@media (max-width: 640px) {
   .member { grid-template-columns: 1fr; }
   .member .member-actions { flex-wrap: wrap; }
+  header { display: block; }
+  header .header-desc { display: block; margin-block-start: 4px; }
+  .table-wrap { overflow-x: visible; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  caption { display: block; }
+  tr { border: 1px solid var(--panel-border, ButtonBorder); border-radius: var(--radius, 6px); padding: 4px 10px; margin-block-end: 10px; }
+  td { padding: 6px 0; overflow-wrap: anywhere; }
+  td:last-child { border-block-end: 0; }
+  td::before { content: attr(data-label); display: block; font-size: 0.85em; font-weight: 600; color: var(--muted-fg, GrayText); overflow-wrap: normal; }
 }
 </style>
 </head>
 <body>
 <header>
   <h1>Tea Combos</h1>
-  <span class="muted">Named model combos served by this plugin</span>
+  <span class="muted header-desc">Named model combos served by this plugin</span>
 </header>
 
 <section id="key-panel" class="panel" aria-labelledby="key-heading">
@@ -158,7 +175,8 @@ th { font-weight: 600; }
         <thead>
           <tr>
             <th scope="col">Name</th>
-            <th scope="col">Strategy</th>
+            <th scope="col">Member strategy</th>
+            <th scope="col">Account strategy</th>
             <th scope="col">Members</th>
             <th scope="col">Affinity</th>
             <th scope="col">Enabled</th>
@@ -179,7 +197,7 @@ th { font-weight: 600; }
         <input id="combo-name" name="name" type="text" required>
       </label>
       <label for="combo-strategy">
-        <span>Strategy</span>
+        <span>Member strategy</span>
         <select id="combo-strategy" name="strategy">
           <option value="round-robin">round-robin</option>
           <option value="failover">failover</option>
@@ -188,7 +206,15 @@ th { font-weight: 600; }
         </select>
       </label>
 
-      <p class="muted">Provider account scheduling is separate; combo-local account scheduling is unavailable. Observation pools affect scoring only and do not restrict credentials.</p>
+      <label for="combo-account-strategy">
+        <span>Account strategy</span>
+        <select id="combo-account-strategy" name="accountStrategy">
+          <option value="inherit">inherit</option>
+          <option value="round-robin">round-robin</option>
+          <option value="quota-aware-round-robin">quota-aware-round-robin</option>
+        </select>
+      </label>
+      <p class="muted">Member strategy chooses which member handles a request. Account strategy is separate: it chooses which credential a member is pinned to. inherit leaves account choice to CPA core (no pin); the other two pin accounts and need an accountPool on every member that uses them. A member can override the combo account strategy. quotaPool is an observation pool for scoring only; it never grants or limits account eligibility.</p>
       <fieldset>
         <legend>Members</legend>
         <p class="muted">Members are tried in this order (round-robin rotates the starting point).</p>
@@ -231,6 +257,7 @@ th { font-weight: 600; }
   var apiBase = "";
   var combos = [];
   var editingName = null;
+  var editingCombo = null;
   var busy = false;
 
   var el = {
@@ -250,6 +277,7 @@ th { font-weight: 600; }
     form: document.getElementById("combo-form"),
     name: document.getElementById("combo-name"),
     strategy: document.getElementById("combo-strategy"),
+    accountStrategy: document.getElementById("combo-account-strategy"),
     members: document.getElementById("members"),
     affinity: document.getElementById("combo-affinity"),
     ttl: document.getElementById("combo-ttl"),
@@ -351,6 +379,31 @@ th { font-weight: 600; }
     });
   }
 
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function isExplicit(strategy) {
+    return strategy === "round-robin" || strategy === "quota-aware-round-robin";
+  }
+
+  function cell(row, text, label) {
+    var td = document.createElement("td");
+    td.setAttribute("data-label", label);
+    td.textContent = text;
+    row.appendChild(td);
+    return td;
+  }
+
+  function memberSummary(combo, member) {
+    var comboAccount = combo.accountStrategy || "inherit";
+    var text = member.provider ? member.model + " (" + member.provider + ")" : member.model;
+    text += " | account strategy: " + (member.accountStrategy || ("combo (" + comboAccount + ")"));
+    text += " | accountPool (eligibility): " + (member.accountPool || "none");
+    text += " | quotaPool (observation): " + (member.quotaPool || "none");
+    return text;
+  }
+
   function renderTable() {
     el.rows.textContent = "";
     if (!combos.length) {
@@ -363,42 +416,27 @@ th { font-weight: 600; }
 
     combos.forEach(function (combo) {
       var row = document.createElement("tr");
-
-      var nameCell = document.createElement("td");
-      nameCell.textContent = combo.name;
-      row.appendChild(nameCell);
-
-      var strategyCell = document.createElement("td");
-      strategyCell.textContent = combo.strategy || "round-robin";
-      row.appendChild(strategyCell);
+      cell(row, combo.name, "Name");
+      cell(row, combo.strategy || "round-robin", "Member strategy");
+      cell(row, combo.accountStrategy || "inherit", "Account strategy");
 
       var membersCell = document.createElement("td");
-      membersCell.textContent = (combo.members || []).map(function (member) {
-        return member.provider ? member.model + " (" + member.provider + ")" : member.model;
-      }).join(", ");
+      membersCell.setAttribute("data-label", "Members");
+      (combo.members || []).forEach(function (member) {
+        var line = document.createElement("div");
+        line.className = "member-line";
+        line.textContent = memberSummary(combo, member);
+        membersCell.appendChild(line);
+      });
       row.appendChild(membersCell);
 
-      var affinityCell = document.createElement("td");
       var affinityOn = !(combo && combo.sessionAffinity === false);
-      affinityCell.textContent = affinityOn ? ("on" + (combo.ttl ? ", ttl " + combo.ttl : "")) : "off";
-      row.appendChild(affinityCell);
-
-      var enabledCell = document.createElement("td");
-      enabledCell.textContent = combo.enabled === false ? "no" : "yes";
-      row.appendChild(enabledCell);
+      cell(row, affinityOn ? ("on" + (combo.ttl ? ", ttl " + combo.ttl : "")) : "off", "Affinity");
+      cell(row, combo.enabled === false ? "no" : "yes", "Enabled");
 
       var actionsCell = document.createElement("td");
-      var weightLabel = document.createElement("label");
-    weightLabel.textContent = "Weight";
-    var weight = document.createElement("input"); weight.type = "number"; weight.min = "0.001"; weight.step = "any"; weight.className = "member-weight"; weight.value = (member && member.weight) || 1; weightLabel.appendChild(weight); row.appendChild(weightLabel);
-    var roleLabel = document.createElement("label"); roleLabel.textContent = "Role";
-    var role = document.createElement("select"); role.className = "member-role";
-    ["primary", "fallback"].forEach(function(v) { var o = document.createElement("option"); o.value = v; o.textContent = v; role.appendChild(o); });
-    role.value = (member && member.role) || "primary"; roleLabel.appendChild(role); row.appendChild(roleLabel);
-    var poolLabel = document.createElement("label"); poolLabel.textContent = "Observation pool ID (optional)";
-    var pool = document.createElement("input"); pool.type = "text"; pool.className = "member-pool"; pool.value = (member && member.quotaPool) || ""; poolLabel.appendChild(pool); row.appendChild(poolLabel);
-
-    var actions = document.createElement("div");
+      actionsCell.setAttribute("data-label", "Actions");
+      var actions = document.createElement("div");
       actions.className = "actions";
       var edit = document.createElement("button");
       edit.type = "button";
@@ -413,61 +451,89 @@ th { font-weight: 600; }
     });
   }
 
+  function addField(row, caption, hint, control) {
+    var label = document.createElement("label");
+    var span = document.createElement("span");
+    span.textContent = caption;
+    label.appendChild(span);
+    if (hint) {
+      var note = document.createElement("small");
+      note.className = "hint";
+      note.textContent = hint;
+      label.appendChild(note);
+    }
+    label.appendChild(control);
+    row.appendChild(label);
+    return control;
+  }
+
+  function textInput(className, value) {
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = className;
+    input.value = value || "";
+    return input;
+  }
+
+  function selectInput(className, options, value) {
+    var select = document.createElement("select");
+    select.className = className;
+    options.forEach(function (pair) {
+      var option = document.createElement("option");
+      option.value = pair[0];
+      option.textContent = pair[1];
+      select.appendChild(option);
+    });
+    select.value = value || "";
+    return select;
+  }
+
   function addMemberRow(member) {
+    member = member || {};
     var row = document.createElement("div");
     row.className = "member";
     row.setAttribute("role", "group");
+    // The loaded member is kept so fields this editor does not show survive a save.
+    row._original = clone(member);
 
-    var modelLabel = document.createElement("label");
-    var modelCaption = document.createElement("span");
-    modelCaption.textContent = "Model";
-    var modelInput = document.createElement("input");
-    modelInput.type = "text";
-    modelInput.required = true;
-    modelInput.className = "member-model";
-    modelInput.value = (member && member.model) || "";
-    modelLabel.appendChild(modelCaption);
-    modelLabel.appendChild(modelInput);
-    row.appendChild(modelLabel);
+    var model = textInput("member-model", member.model);
+    model.required = true;
+    addField(row, "Model", "", model);
+    addField(row, "Provider (optional)", "", textInput("member-provider", member.provider));
 
-    var providerLabel = document.createElement("label");
-    var providerCaption = document.createElement("span");
-    providerCaption.textContent = "Provider (optional)";
-    var providerInput = document.createElement("input");
-    providerInput.type = "text";
-    providerInput.className = "member-provider";
-    providerInput.value = (member && member.provider) || "";
-    providerLabel.appendChild(providerCaption);
-    providerLabel.appendChild(providerInput);
-    row.appendChild(providerLabel);
+    var weight = document.createElement("input");
+    weight.type = "number";
+    weight.min = "0.001";
+    weight.step = "any";
+    weight.className = "member-weight";
+    weight.value = member.weight ? String(member.weight) : "";
+    addField(row, "Weight (blank for default)", "", weight);
+
+    addField(row, "Role", "", selectInput("member-role", [["", "default (primary)"], ["primary", "primary"], ["fallback", "fallback"]], member.role));
+
+    addField(row, "Member account strategy", "Blank follows the combo account strategy. inherit leaves this member to CPA core with no pin.", selectInput("member-account-strategy", [
+      ["", "use combo account strategy"],
+      ["inherit", "inherit"],
+      ["round-robin", "round-robin"],
+      ["quota-aware-round-robin", "quota-aware-round-robin"]
+    ], member.accountStrategy));
+    addField(row, "Account pool (accountPool)", "eligibility: the only accounts this member may be pinned to. Required for round-robin and quota-aware-round-robin, empty otherwise.", textInput("member-account-pool", member.accountPool));
+    addField(row, "Observation pool (quotaPool)", "scoring only: never grants or limits account eligibility.", textInput("member-pool", member.quotaPool));
 
     var actions = document.createElement("div");
     actions.className = "member-actions";
-
-    var up = document.createElement("button");
-    up.type = "button";
-    up.className = "small";
-    up.textContent = "↑";
-    up.setAttribute("aria-label", "Move member up");
-    up.addEventListener("click", function () { moveMember(row, -1); });
-    actions.appendChild(up);
-
-    var down = document.createElement("button");
-    down.type = "button";
-    down.className = "small";
-    down.textContent = "↓";
-    down.setAttribute("aria-label", "Move member down");
-    down.addEventListener("click", function () { moveMember(row, 1); });
-    actions.appendChild(down);
-
-    var remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "small";
-    remove.textContent = "Remove";
-    remove.setAttribute("aria-label", "Remove member");
-    remove.addEventListener("click", function () { row.remove(); refreshMemberButtons(); });
-    actions.appendChild(remove);
-
+    [["↑", "Move member up", function () { moveMember(row, -1); }],
+     ["↓", "Move member down", function () { moveMember(row, 1); }],
+     ["Remove", "Remove member", function () { row.remove(); refreshMemberButtons(); }]
+    ].forEach(function (spec) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "small";
+      button.textContent = spec[0];
+      button.setAttribute("aria-label", spec[1]);
+      button.addEventListener("click", spec[2]);
+      actions.appendChild(button);
+    });
     row.appendChild(actions);
     el.members.appendChild(row);
     refreshMemberButtons();
@@ -493,10 +559,12 @@ th { font-weight: 600; }
 
   function openEditor(combo) {
     editingName = combo ? combo.name : null;
+    editingCombo = combo ? clone(combo) : null;
     el.editorHeading.textContent = combo ? ("Edit " + combo.name) : "New combo";
     el.name.value = combo ? combo.name : "";
     el.name.disabled = Boolean(combo);
     el.strategy.value = (combo && combo.strategy) || "round-robin";
+    el.accountStrategy.value = (combo && combo.accountStrategy) || "inherit";
     el.affinity.checked = !(combo && combo.sessionAffinity === false);
     el.ttl.value = (combo && combo.ttl) || "";
     el.enabled.checked = !(combo && combo.enabled === false);
@@ -511,46 +579,128 @@ th { font-weight: 600; }
 
   function closeEditor() {
     editingName = null;
+    editingCombo = null;
     el.editorPanel.hidden = true;
     setNotice(el.editorError, "");
   }
 
+  function setOrDelete(target, field, value) {
+    if (value === "" || value === undefined || value === null) {
+      delete target[field];
+    } else {
+      target[field] = value;
+    }
+  }
+
+  // collectCombo starts from the combo as loaded and overwrites only what the form owns, so an
+  // untouched save sends back exactly what the server holds.
   function collectCombo() {
+    var original = editingCombo || {};
     var members = Array.prototype.slice.call(el.members.querySelectorAll(".member")).map(function (row) {
-      var member = { model: row.querySelector(".member-model").value.trim() };
-      var provider = row.querySelector(".member-provider").value.trim();
-      if (provider) { member.provider = provider; }
-      member.weight = Number(row.querySelector(".member-weight").value);
-      member.role = row.querySelector(".member-role").value;
-      var pool = row.querySelector(".member-pool").value.trim(); if (pool) { member.quotaPool = pool; }
+      var member = row._original ? clone(row._original) : {};
+      member.model = row.querySelector(".member-model").value.trim();
+      setOrDelete(member, "provider", row.querySelector(".member-provider").value.trim());
+      var weight = row.querySelector(".member-weight").value.trim();
+      setOrDelete(member, "weight", weight === "" ? "" : Number(weight));
+      setOrDelete(member, "role", row.querySelector(".member-role").value);
+      setOrDelete(member, "accountStrategy", row.querySelector(".member-account-strategy").value);
+      setOrDelete(member, "accountPool", row.querySelector(".member-account-pool").value.trim());
+      setOrDelete(member, "quotaPool", row.querySelector(".member-pool").value.trim());
       return member;
     });
-    return {
-      name: el.name.value.trim(),
-      strategy: el.strategy.value,
-      members: members,
-      sessionAffinity: el.affinity.checked,
-      ttl: el.ttl.value.trim(),
-      enabled: el.enabled.checked
-    };
+    var combo = clone(original);
+    combo.name = el.name.value.trim();
+    combo.strategy = el.strategy.value;
+    // An omitted accountStrategy already means inherit, so do not add the key on an untouched save.
+    var account = el.accountStrategy.value;
+    if (account === "inherit" && !original.accountStrategy) { account = ""; }
+    setOrDelete(combo, "accountStrategy", account);
+    combo.members = members;
+    if (!(el.affinity.checked && editingCombo && original.sessionAffinity === undefined)) {
+      combo.sessionAffinity = el.affinity.checked;
+    }
+    var ttl = el.ttl.value.trim();
+    if (ttl || original.ttl) { combo.ttl = ttl; } else { delete combo.ttl; }
+    if (!(el.enabled.checked && editingCombo && original.enabled === undefined)) {
+      combo.enabled = el.enabled.checked;
+    }
+    return combo;
+  }
+
+  // validateCombo mirrors the server's accountPool rule so the operator sees it before saving.
+  // quotaPool never satisfies it: it is an observation pool, not an eligibility boundary.
+  function validateCombo(combo) {
+    if (!combo.members.length) { return "Add at least one member."; }
+    for (var i = 0; i < combo.members.length; i++) {
+      var member = combo.members[i];
+      var effective = member.accountStrategy || combo.accountStrategy || "";
+      var label = "Member " + (i + 1) + (member.model ? " (" + member.model + ")" : "");
+      if (isExplicit(effective) && !member.accountPool) {
+        return label + " uses account strategy " + effective + " and needs an accountPool. quotaPool is observation only and cannot stand in for it.";
+      }
+      if (!isExplicit(effective) && member.accountPool) {
+        return label + " sets an accountPool but its effective account strategy is " + (effective || "inherit") + ". Pick round-robin or quota-aware-round-robin, or clear accountPool.";
+      }
+    }
+    return "";
+  }
+
+  function str(value) { return value === undefined || value === null ? "" : String(value); }
+
+  // diffCombo lists the fields where the stored combo differs from what was sent.
+  function diffCombo(sent, stored) {
+    var diffs = [];
+    function check(path, a, b) { if (a !== b) { diffs.push(path); } }
+    check("name", str(sent.name), str(stored.name));
+    check("strategy", str(sent.strategy), str(stored.strategy || "round-robin"));
+    check("accountStrategy", str(sent.accountStrategy), str(stored.accountStrategy));
+    check("sessionAffinity", sent.sessionAffinity !== false, stored.sessionAffinity !== false);
+    check("enabled", sent.enabled !== false, stored.enabled !== false);
+    check("ttl", str(sent.ttl), str(stored.ttl));
+    var sm = sent.members || [];
+    var tm = stored.members || [];
+    check("members.length", sm.length, tm.length);
+    sm.forEach(function (member, i) {
+      var other = tm[i] || {};
+      ["model", "provider", "role", "quotaPool", "accountStrategy", "accountPool"].forEach(function (field) {
+        check("members[" + i + "]." + field, str(member[field]), str(other[field]));
+      });
+      check("members[" + i + "].weight", Number(member.weight || 0), Number(other.weight || 0));
+    });
+    return diffs;
   }
 
   function saveCombo(event) {
     event.preventDefault();
     if (busy) { return; }
     var combo = collectCombo();
-    if (!combo.members.length) {
-      setNotice(el.editorError, "Add at least one member.", "error");
+    var problem = validateCombo(combo);
+    if (problem) {
+      setNotice(el.editorError, problem, "error");
       return;
     }
     busy = true;
     el.save.disabled = true;
     setNotice(el.editorError, "");
-    var request = editingName
+    var wasEditing = Boolean(editingName);
+    var request = wasEditing
       ? api("PUT", editingName, combo)
       : api("POST", "", combo);
     request.then(function () {
-      setNotice(el.notice, editingName ? "Combo updated." : "Combo created.", "success");
+      // Read the combo back instead of trusting the write response, so a server that drops a
+      // field is visible here and not only at routing time.
+      return api("GET", combo.name);
+    }).then(function (stored) {
+      var diffs = diffCombo(combo, stored || {});
+      if (diffs.length) {
+        editingName = combo.name;
+        editingCombo = clone(stored || {});
+        el.name.disabled = true;
+        el.deleteButton.hidden = false;
+        setNotice(el.editorError, "Saved, but the read-back differs from what was sent (" + diffs.join(", ") + "). The server did not keep these values.", "error");
+        return loadCombos();
+      }
+      setNotice(el.notice, wasEditing ? "Combo updated and read back." : "Combo created and read back.", "success");
       closeEditor();
       return loadCombos();
     }).catch(function (error) {
@@ -558,7 +708,7 @@ th { font-weight: 600; }
         handleError(error);
         return;
       }
-      setNotice(el.editorError, error.message || "Save failed", "error");
+      setNotice(el.editorError, (error && error.message) || "Save failed", "error");
     }).then(function () {
       busy = false;
       el.save.disabled = false;

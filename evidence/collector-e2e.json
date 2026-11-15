@@ -40,12 +40,12 @@
     {
       "provider": "claude",
       "status": "ok",
-      "plan": "pro"
+      "plan": "max5"
     },
     {
       "provider": "claude",
       "status": "ok",
-      "plan": "max5"
+      "plan": "pro"
     },
     {
       "provider": "openai-compatible-mock",
@@ -69,7 +69,7 @@
       "measuredCapacity": 6,
       "usableCapacity": 6,
       "estimated": true,
-      "nextResetAt": "2026-11-15T20:37:13.754485Z"
+      "nextResetAt": "2026-11-16T01:16:01.985323Z"
     },
     {
       "id": "claude-pool",
@@ -85,7 +85,7 @@
       "measuredCapacity": 6,
       "usableCapacity": 6,
       "estimated": true,
-      "nextResetAt": "2026-11-15T20:37:13.754485Z"
+      "nextResetAt": "2026-11-16T01:16:01.985323Z"
     }
   ]
 }

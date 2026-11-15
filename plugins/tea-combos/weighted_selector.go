@@ -200,3 +200,15 @@ func normalizedCapacity(a quota.Account, model string, now time.Time, maxAge tim
 	}
 	return score.Value
 }
+
+// freshSnapshot hands the account router the cached snapshot and the configured maximum age. The
+// router owns the freshness decision; this only reads under the same lock Order uses.
+func (s *weightedSelector) freshSnapshot(time.Time) (quota.Snapshot, time.Duration, error) {
+	if s == nil || s.path == "" {
+		return quota.Snapshot{}, 0, fmt.Errorf("no quotaSnapshotPath configured")
+	}
+	s.mu.RLock()
+	snap := s.snapshot
+	s.mu.RUnlock()
+	return snap, s.maxAge, nil
+}

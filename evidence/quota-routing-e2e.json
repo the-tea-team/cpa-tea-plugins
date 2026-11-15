@@ -1,0 +1,30 @@
+{
+  "syntheticOnly": true,
+  "checks": {
+    "inherit_honours_core_priority": true,
+    "inventory_union": true,
+    "native_pin_identity": true,
+    "native_across_priority_quota": true,
+    "host_supplies_both_priority_tiers": true,
+    "same_model_concurrent_independent_policies": true,
+    "concurrent_pool_isolation": true,
+    "restricted_caller_member_denied": true,
+    "combo_account_affinity": true,
+    "account_retry_after_503": true,
+    "pool_no_unpin_on_failure": true,
+    "stream_before_first_payload_account_retry": true,
+    "stream_after_first_payload_no_replay": true,
+    "core_cooldown_rejects_stale_snapshot_pin": true,
+    "core_disabled_rejects_stale_snapshot_pin": true,
+    "exhausted_explicit_pool_rejects_without_upstream": true,
+    "stale_pool_never_widens": true
+  },
+  "policyCounts": {
+    "rrLow": 15,
+    "quotaLow": 30,
+    "requestsEach": 30
+  },
+  "runDir": "/data/hermes/hermes-home/cache/scratch/quota-routing-9bp2t2js",
+  "passed": 17,
+  "total": 17
+}

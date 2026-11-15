@@ -5,6 +5,8 @@
     "public_shell_only": true,
     "summary_requires_auth": true,
     "native_plugins_loaded": true,
+    "observer_has_no_scheduler_decisions": true,
+    "observer_preserves_core_affinity": true,
     "weighted_1x_5x_pool_70_percent": true,
     "combo_member_weight_5_to_1": true,
     "native_stream": true,
@@ -19,8 +21,8 @@
     "native_session_affinity": true,
     "known_exhaustion_rejects_without_upstream": true
   },
-  "passed": 17,
-  "total": 17,
+  "passed": 19,
+  "total": 19,
   "comboCounts": {
     "good-model": 10,
     "other-model": 2
@@ -28,23 +30,23 @@
   "nativeAffinityObserved": true,
   "lastDecisions": [
     {
-      "at": "2026-11-15T21:37:10.209008323+03:00",
+      "at": "2026-11-16T02:17:22.94035308+03:00",
       "provider": "",
       "model": "good-model",
-      "selectedId": "openai-compatibility:mock:f0a389700ba2",
+      "selectedId": "openai-compatibility:mock:d503419871ce",
       "mode": "active",
       "reason": "proposed",
       "scores": {
-        "openai-compatibility:mock:e3a3d6dcd8af": {
-          "value": 4.220210483534653,
+        "openai-compatibility:mock:3c939340d535": {
+          "value": 4.220201206115649,
           "known": true,
           "exhausted": false,
           "reasons": [
             "scored from fresh known windows"
           ]
         },
-        "openai-compatibility:mock:f0a389700ba2": {
-          "value": 17.000662444296438,
+        "openai-compatibility:mock:d503419871ce": {
+          "value": 17.000633242420445,
           "known": true,
           "exhausted": false,
           "reasons": [
@@ -54,23 +56,23 @@
       }
     },
     {
-      "at": "2026-11-15T21:37:10.213281822+03:00",
+      "at": "2026-11-16T02:17:22.944813341+03:00",
       "provider": "",
       "model": "good-model",
-      "selectedId": "openai-compatibility:mock:f0a389700ba2",
+      "selectedId": "openai-compatibility:mock:d503419871ce",
       "mode": "active",
       "reason": "proposed",
       "scores": {
-        "openai-compatibility:mock:e3a3d6dcd8af": {
-          "value": 4.220211049484904,
+        "openai-compatibility:mock:3c939340d535": {
+          "value": 4.2202017967943375,
           "known": true,
           "exhausted": false,
           "reasons": [
             "scored from fresh known windows"
           ]
         },
-        "openai-compatibility:mock:f0a389700ba2": {
-          "value": 17.000664225708544,
+        "openai-compatibility:mock:d503419871ce": {
+          "value": 17.000635101648328,
           "known": true,
           "exhausted": false,
           "reasons": [
@@ -80,9 +82,11 @@
       }
     }
   ],
+  "url": "http://127.0.0.1:55107/v0/resource/plugins/tea-quota-router/capacity",
+  "runDir": "/data/hermes/hermes-home/cache/scratch/tea-quota-e2e-ypyaavzx",
   "notProvenByThisHarness": [
     "real provider collection",
     "CPAMP integration (tested separately)",
-    "combo-local account policies blocked by priority gate"
+    "combo-local account policies (covered by quota-routing-e2e.py)"
   ]
 }

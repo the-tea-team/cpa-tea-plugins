@@ -28,18 +28,21 @@ type AdminSource struct {
 	KeyEnv   string `json:"keyEnv" yaml:"keyEnv"`
 }
 type Config struct {
-	DataDir             string                     `json:"dataDir" yaml:"dataDir"`
-	SchedulerMode       string                     `json:"schedulerMode" yaml:"schedulerMode"`
-	ProviderStrategies  map[string]string          `json:"providerStrategies" yaml:"providerStrategies"`
-	ManagementURL       string                     `json:"managementURL" yaml:"managementURL"`
-	ManagementKeyEnv    string                     `json:"managementKeyEnv" yaml:"managementKeyEnv"`
-	PollIntervalSeconds int                        `json:"pollIntervalSeconds" yaml:"pollIntervalSeconds"`
-	MaxAgeSeconds       int                        `json:"maxAgeSeconds" yaml:"maxAgeSeconds"`
-	Pools               []quota.Pool               `json:"pools" yaml:"pools"`
-	AccountOverrides    map[string]AccountOverride `json:"accountOverrides" yaml:"accountOverrides"`
-	FixtureSnapshotPath string                     `json:"fixtureSnapshotPath" yaml:"fixtureSnapshotPath"`
-	Prices              map[string]Price           `json:"prices" yaml:"prices"`
-	AdminSources        []AdminSource              `json:"adminSources" yaml:"adminSources"`
+	DataDir       string `json:"dataDir" yaml:"dataDir"`
+	SchedulerMode string `json:"schedulerMode" yaml:"schedulerMode"`
+	// QuotaAcrossPriorities lets quota-aware strategies score candidates from
+	// every priority tier. Default false keeps max-tier-only behavior.
+	QuotaAcrossPriorities bool                       `json:"quotaAcrossPriorities" yaml:"quotaAcrossPriorities"`
+	ProviderStrategies    map[string]string          `json:"providerStrategies" yaml:"providerStrategies"`
+	ManagementURL         string                     `json:"managementURL" yaml:"managementURL"`
+	ManagementKeyEnv      string                     `json:"managementKeyEnv" yaml:"managementKeyEnv"`
+	PollIntervalSeconds   int                        `json:"pollIntervalSeconds" yaml:"pollIntervalSeconds"`
+	MaxAgeSeconds         int                        `json:"maxAgeSeconds" yaml:"maxAgeSeconds"`
+	Pools                 []quota.Pool               `json:"pools" yaml:"pools"`
+	AccountOverrides      map[string]AccountOverride `json:"accountOverrides" yaml:"accountOverrides"`
+	FixtureSnapshotPath   string                     `json:"fixtureSnapshotPath" yaml:"fixtureSnapshotPath"`
+	Prices                map[string]Price           `json:"prices" yaml:"prices"`
+	AdminSources          []AdminSource              `json:"adminSources" yaml:"adminSources"`
 }
 
 func parseConfig(raw []byte) (Config, error) {

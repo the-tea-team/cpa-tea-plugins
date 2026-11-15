@@ -1,0 +1,53 @@
+{
+  "syntheticOnly": true,
+  "checks": {
+    "oauth_inventory_lists_supported_claude_models": true,
+    "inventory_only_no_completions": true,
+    "same_model_on_oauth_and_api_credentials": true,
+    "no_real_quota_collection_configured": true,
+    "inventory_only_no_completions_with_api_key": true,
+    "exhausted_snapshot_loaded_oauth_enabled": true,
+    "exhausted_ordinary_route_rejected": true,
+    "exhausted_ordinary_route_no_paid_mock_request": true,
+    "exhausted_scheduler_recorded_subscription_rejection": true,
+    "exhausted_pinned_api_combo_allowed": true,
+    "exhausted_api_only_model_allowed": true,
+    "core_disabled_snapshot_still_enabled": true,
+    "core_reports_oauth_disabled": true,
+    "disabled_ordinary_route_rejected": true,
+    "disabled_ordinary_route_no_paid_mock_request": true,
+    "disabled_scheduler_recorded_subscription_rejection": true,
+    "disabled_pinned_api_combo_allowed": true,
+    "disabled_api_only_model_allowed": true,
+    "no_oauth_upstream_attempt_at_mock": true,
+    "no_oauth_or_claude_external_attempt_at_tripwire": true
+  },
+  "upstream": {
+    "mockRequests": 4,
+    "lanes": [
+      "api"
+    ],
+    "paths": [
+      "/v1/messages"
+    ],
+    "externalAttemptsRefusedByTripwire": 32
+  },
+  "model": "claude-3-5-haiku-20241022",
+  "tripwireRequestLines": [
+    "CONNECT antigravity-hub-auto-updater-974169037036.us-central1.run.app:443 HTTP/1.1",
+    "CONNECT models.router-for.me:443 HTTP/1.1",
+    "CONNECT raw.githubusercontent.com:443 HTTP/1.1",
+    "CONNECT registry.npmjs.org:443 HTTP/1.1"
+  ],
+  "oauthInventoryModelCount": 20,
+  "intersectionCandidates": [
+    "claude-3-5-haiku-20241022",
+    "claude-3-7-sonnet-20250219",
+    "claude-fable-5",
+    "claude-fable-5-1",
+    "claude-fable-5-2"
+  ],
+  "passed": 20,
+  "total": 20,
+  "cleanedUp": true
+}
