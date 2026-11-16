@@ -48,6 +48,7 @@ func (p *combosPlugin) RegisterManagement(_ context.Context, req pluginapi.Manag
 		})
 	}
 
+	routes = append(routes, pluginapi.ManagementRoute{Method: http.MethodGet, Path: base + "/plugins/" + pluginID + "/targets", Handler: pinTargetsHandler{source: p.targetSource()}})
 	return pluginapi.ManagementRegistrationResponse{
 		Routes: routes,
 		Resources: []pluginapi.ResourceRoute{{

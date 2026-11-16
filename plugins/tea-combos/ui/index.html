@@ -259,6 +259,9 @@ th { font-weight: 600; }
   var editingName = null;
   var editingCombo = null;
   var busy = false;
+  var targets = null;
+  var targetsPending = false;
+  var targetsGeneration = 0;
 
   var el = {
     keyPanel: document.getElementById("key-panel"),
@@ -318,8 +321,11 @@ th { font-weight: 600; }
     this.message = message;
   }
 
-  function api(method, name, payload) {
-    var target = apiBase + "/combos";
+  function api(method, name, payload) { return apiRequest(method, "/combos", name, payload); }
+  function targetsApi() { return apiRequest("GET", "/targets", null, undefined); }
+
+  function apiRequest(method, path, name, payload) {
+    var target = apiBase + path;
     if (name) { target += "?name=" + encodeURIComponent(name); }
     var headers = { "Authorization": "Bearer " + key };
     var body;
@@ -353,7 +359,8 @@ th { font-weight: 600; }
 
   function handleError(error) {
     if (error && (error.status === 401 || error.status === 403)) {
-      localStorage.removeItem(STORAGE_KEY);
+      clearTargets();
+    localStorage.removeItem(STORAGE_KEY);
       key = "";
       el.app.hidden = true;
       el.keyPanel.hidden = false;
@@ -400,6 +407,8 @@ th { font-weight: 600; }
     var text = member.provider ? member.model + " (" + member.provider + ")" : member.model;
     text += " | account strategy: " + (member.accountStrategy || ("combo (" + comboAccount + ")"));
     text += " | accountPool (eligibility): " + (member.accountPool || "none");
+    if (member.accountId) { text += " | pinned account (accountId): " + member.accountId; }
+    if (member.connectionId) { text += " | pinned connection (connectionId): " + member.connectionId; }
     text += " | quotaPool (observation): " + (member.quotaPool || "none");
     return text;
   }
@@ -488,6 +497,80 @@ th { font-weight: 600; }
     return select;
   }
 
+  function clearTargets() {
+    targetsGeneration++;
+    targets = null;
+    targetsPending = false;
+    Array.prototype.slice.call(el.members.querySelectorAll(".member")).forEach(function (row) { refreshPinOptions(row); });
+  }
+
+  function loadTargets() {
+    if (targets !== null || targetsPending) { return; }
+    targetsPending = true;
+    var generation = targetsGeneration;
+    targetsApi().then(function (data) {
+      if (generation !== targetsGeneration) { return; }
+      targets = { accounts: (data && data.accounts) || [], connections: (data && data.connections) || [] };
+    }).catch(function (error) {
+      if (generation !== targetsGeneration) { return; }
+      targets = null;
+      if (error && (error.status === 401 || error.status === 403)) { handleError(error); return; }
+      setNotice(el.notice, "Pin targets unavailable: " + ((error && error.message) || "request failed") + ". Saved pins are preserved; new pin choices need targets.", "error");
+    }).then(function () {
+      if (generation !== targetsGeneration) { return; }
+      targetsPending = false;
+      Array.prototype.slice.call(el.members.querySelectorAll(".member")).forEach(function (row) { refreshPinOptions(row); });
+    });
+  }
+
+  function pinOption(value, text) {
+    var option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    return option;
+  }
+
+  function refreshPinOptions(row) {
+    var model = row.querySelector(".member-model").value.trim();
+    var provider = row.querySelector(".member-provider").value.trim();
+    var acctSel = row.querySelector(".member-account-pin");
+    var connSel = row.querySelector(".member-connection-pin");
+    if (!acctSel || !connSel) { return; }
+    // Seed the saved selection once; subsequent blanks are explicit selections.
+    var curAcct = row._pinsInitialized ? acctSel.value : String(row._original.accountId || "");
+    var curConn = row._pinsInitialized ? connSel.value : String(row._original.connectionId || "");
+    row._pinsInitialized = true;
+    var accounts = targets ? targets.accounts : [];
+    var connections = targets ? targets.connections : [];
+    function modelOK(c) { return !model || (Array.isArray(c.models) && c.models.indexOf(model) >= 0); }
+    function provOK(p) { return !provider || !p || p === provider; }
+    acctSel.textContent = "";
+    acctSel.appendChild(pinOption("", "no account pin"));
+    var seenAcct = {};
+    accounts.forEach(function (a) {
+      if (!a.id || seenAcct[a.id]) { return; }
+      var supported = connections.some(function (c) { return c.accountId === a.id && provOK(c.provider || a.provider) && modelOK(c); });
+      if (!supported || !provOK(a.provider)) { return; }
+      seenAcct[a.id] = true;
+      acctSel.appendChild(pinOption(String(a.id), (a.label || a.id) + " (" + a.id + ")"));
+    });
+    if (curAcct && !seenAcct[curAcct]) { acctSel.appendChild(pinOption(curAcct, curAcct + " (" + (curAcct === String(row._original.accountId || "") ? "saved" : "selected") + " pin — unavailable for this model/provider)")); seenAcct[curAcct] = true; }
+    acctSel.value = curAcct;
+    connSel.textContent = "";
+    connSel.appendChild(pinOption("", "no connection pin"));
+    var seenConn = {};
+    connections.forEach(function (c) {
+      if (!c.id || seenConn[c.id] || !provOK(c.provider) || !modelOK(c)) { return; }
+      seenConn[c.id] = true;
+      var suffix = "";
+      if (c.disabled) { suffix += " — disabled"; }
+      if (c.unavailable) { suffix += " — unavailable"; }
+      connSel.appendChild(pinOption(String(c.id), (c.label || c.id) + " (" + c.id + ")" + suffix));
+    });
+    if (curConn && !seenConn[curConn]) { connSel.appendChild(pinOption(curConn, curConn + " (" + (curConn === String(row._original.connectionId || "") ? "saved" : "selected") + " pin — unavailable for this model/provider)")); seenConn[curConn] = true; }
+    connSel.value = curConn;
+  }
+
   function addMemberRow(member) {
     member = member || {};
     var row = document.createElement("div");
@@ -517,7 +600,20 @@ th { font-weight: 600; }
       ["round-robin", "round-robin"],
       ["quota-aware-round-robin", "quota-aware-round-robin"]
     ], member.accountStrategy));
-    addField(row, "Account pool (accountPool)", "eligibility: the only accounts this member may be pinned to. Required for round-robin and quota-aware-round-robin, empty otherwise.", textInput("member-account-pool", member.accountPool));
+    addField(row, "Account pool (accountPool)", "eligibility: the only accounts this member may be pinned to. Required for round-robin and quota-aware-round-robin without a pin; with a pin it is an additional intersection.", textInput("member-account-pool", member.accountPool));
+
+    var accountPin = selectInput("member-account-pin", [["", "no account pin"]], member.accountId);
+    var connectionPin = selectInput("member-connection-pin", [["", "no connection pin"]], member.connectionId);
+    addField(row, "Pinned account (accountId)", "optional: pin overrides inherit — an unavailable pinned target may fall through to the next member, never to another account. Choosing this clears the connection pin.", accountPin);
+    addField(row, "Pinned connection (connectionId)", "optional: pin overrides inherit — an unavailable pinned target may fall through to the next member, never to another connection. Choosing this clears the account pin.", connectionPin);
+    // Only an explicit user change clears the other pin; programmatic refresh never does.
+    accountPin.addEventListener("change", function () { if (accountPin.value) { connectionPin.value = ""; } });
+    connectionPin.addEventListener("change", function () { if (connectionPin.value) { accountPin.value = ""; } });
+    model.addEventListener("change", function () { refreshPinOptions(row); });
+    row.querySelector(".member-provider").addEventListener("change", function () { refreshPinOptions(row); });
+    refreshPinOptions(row);
+    loadTargets();
+
     addField(row, "Observation pool (quotaPool)", "scoring only: never grants or limits account eligibility.", textInput("member-pool", member.quotaPool));
 
     var actions = document.createElement("div");
@@ -605,6 +701,8 @@ th { font-weight: 600; }
       setOrDelete(member, "role", row.querySelector(".member-role").value);
       setOrDelete(member, "accountStrategy", row.querySelector(".member-account-strategy").value);
       setOrDelete(member, "accountPool", row.querySelector(".member-account-pool").value.trim());
+      setOrDelete(member, "accountId", row.querySelector(".member-account-pin").value.trim());
+      setOrDelete(member, "connectionId", row.querySelector(".member-connection-pin").value.trim());
       setOrDelete(member, "quotaPool", row.querySelector(".member-pool").value.trim());
       return member;
     });
@@ -635,11 +733,15 @@ th { font-weight: 600; }
       var member = combo.members[i];
       var effective = member.accountStrategy || combo.accountStrategy || "";
       var label = "Member " + (i + 1) + (member.model ? " (" + member.model + ")" : "");
-      if (isExplicit(effective) && !member.accountPool) {
-        return label + " uses account strategy " + effective + " and needs an accountPool. quotaPool is observation only and cannot stand in for it.";
+      var pinned = Boolean(member.accountId || member.connectionId);
+      if (member.accountId && member.connectionId) {
+        return label + " sets both accountId and connectionId pins. Choose one pin only.";
       }
-      if (!isExplicit(effective) && member.accountPool) {
-        return label + " sets an accountPool but its effective account strategy is " + (effective || "inherit") + ". Pick round-robin or quota-aware-round-robin, or clear accountPool.";
+      if (isExplicit(effective) && !member.accountPool && !pinned) {
+        return label + " uses account strategy " + effective + " and needs an accountPool or a pin. quotaPool is observation only and cannot stand in for it.";
+      }
+      if (!isExplicit(effective) && member.accountPool && !pinned) {
+        return label + " sets an accountPool but its effective account strategy is " + (effective || "inherit") + ". Pick round-robin or quota-aware-round-robin, set a pin (pin plus pool is an extra intersection), or clear accountPool.";
       }
     }
     return "";
@@ -662,7 +764,7 @@ th { font-weight: 600; }
     check("members.length", sm.length, tm.length);
     sm.forEach(function (member, i) {
       var other = tm[i] || {};
-      ["model", "provider", "role", "quotaPool", "accountStrategy", "accountPool"].forEach(function (field) {
+      ["model", "provider", "role", "quotaPool", "accountStrategy", "accountPool", "accountId", "connectionId"].forEach(function (field) {
         check("members[" + i + "]." + field, str(member[field]), str(other[field]));
       });
       check("members[" + i + "].weight", Number(member.weight || 0), Number(other.weight || 0));
@@ -750,6 +852,7 @@ th { font-weight: 600; }
       setNotice(el.keyError, "Enter the management key.", "error");
       return;
     }
+    if (key !== value) { clearTargets(); }
     key = value;
     localStorage.setItem(STORAGE_KEY, value);
     el.keyInput.value = "";
@@ -757,6 +860,7 @@ th { font-weight: 600; }
   });
 
   document.getElementById("forget-key").addEventListener("click", function () {
+    clearTargets();
     localStorage.removeItem(STORAGE_KEY);
     key = "";
     combos = [];
@@ -770,7 +874,7 @@ th { font-weight: 600; }
   });
 
   document.getElementById("new-combo").addEventListener("click", function () { openEditor(null); });
-  document.getElementById("refresh").addEventListener("click", loadCombos);
+  document.getElementById("refresh").addEventListener("click", function () { clearTargets(); loadTargets(); loadCombos(); });
   document.getElementById("add-member").addEventListener("click", function () { addMemberRow({}); });
   document.getElementById("cancel-edit").addEventListener("click", closeEditor);
   el.form.addEventListener("submit", saveCombo);

@@ -30,23 +30,23 @@
   "nativeAffinityObserved": true,
   "lastDecisions": [
     {
-      "at": "2026-11-16T02:17:22.94035308+03:00",
+      "at": "2026-11-16T16:48:08.193245797+03:00",
       "provider": "",
       "model": "good-model",
-      "selectedId": "openai-compatibility:mock:d503419871ce",
+      "selectedId": "openai-compatibility:mock:47aa5df83b62",
       "mode": "active",
       "reason": "proposed",
       "scores": {
-        "openai-compatibility:mock:3c939340d535": {
-          "value": 4.220201206115649,
+        "openai-compatibility:mock:3f3e89866e6c": {
+          "value": 4.220208897851939,
           "known": true,
           "exhausted": false,
           "reasons": [
             "scored from fresh known windows"
           ]
         },
-        "openai-compatibility:mock:d503419871ce": {
-          "value": 17.000633242420445,
+        "openai-compatibility:mock:47aa5df83b62": {
+          "value": 17.000657453132057,
           "known": true,
           "exhausted": false,
           "reasons": [
@@ -56,23 +56,23 @@
       }
     },
     {
-      "at": "2026-11-16T02:17:22.944813341+03:00",
+      "at": "2026-11-16T16:48:08.19611213+03:00",
       "provider": "",
       "model": "good-model",
-      "selectedId": "openai-compatibility:mock:d503419871ce",
+      "selectedId": "openai-compatibility:mock:47aa5df83b62",
       "mode": "active",
       "reason": "proposed",
       "scores": {
-        "openai-compatibility:mock:3c939340d535": {
-          "value": 4.2202017967943375,
+        "openai-compatibility:mock:3f3e89866e6c": {
+          "value": 4.220209277447075,
           "known": true,
           "exhausted": false,
           "reasons": [
             "scored from fresh known windows"
           ]
         },
-        "openai-compatibility:mock:d503419871ce": {
-          "value": 17.000635101648328,
+        "openai-compatibility:mock:47aa5df83b62": {
+          "value": 17.000658647961473,
           "known": true,
           "exhausted": false,
           "reasons": [
@@ -82,8 +82,8 @@
       }
     }
   ],
-  "url": "http://127.0.0.1:55107/v0/resource/plugins/tea-quota-router/capacity",
-  "runDir": "/data/hermes/hermes-home/cache/scratch/tea-quota-e2e-ypyaavzx",
+  "url": "http://127.0.0.1:36251/v0/resource/plugins/tea-quota-router/capacity",
+  "runDir": "/data/hermes/hermes-home/cache/scratch/tea-quota-e2e-a5alctea",
   "notProvenByThisHarness": [
     "real provider collection",
     "CPAMP integration (tested separately)",

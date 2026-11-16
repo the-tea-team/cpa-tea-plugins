@@ -43,15 +43,31 @@ type Member struct {
 	// AccountPool is the explicit eligibility boundary for account pinning. It is distinct from
 	// QuotaPool, which only shapes member weighting and never grants permission.
 	AccountPool string `json:"accountPool,omitempty" yaml:"accountPool,omitempty"`
+	// AccountID optionally pins the member to one quota account (opaque snapshot id).
+	AccountID string `json:"accountId,omitempty" yaml:"accountId,omitempty"`
+	// ConnectionID optionally pins the member to one native credential (opaque snapshot id, not
+	// an auth index). It is mutually exclusive with AccountID.
+	ConnectionID string `json:"connectionId,omitempty" yaml:"connectionId,omitempty"`
+}
+
+// Pinned reports whether the member is pinned to one account or one connection.
+func (m Member) Pinned() bool {
+	return m.AccountID != "" || m.ConnectionID != ""
 }
 
 // EffectiveAccountStrategy resolves the member override against the combo policy. The result is
 // "" or "inherit" for core behaviour, otherwise an explicit pinning strategy.
 func (m Member) EffectiveAccountStrategy(combo Combo) string {
+	strategy := combo.AccountStrategy
 	if m.AccountStrategy != "" {
-		return m.AccountStrategy
+		strategy = m.AccountStrategy
 	}
-	return combo.AccountStrategy
+	// A pin always pins: with no explicit policy (empty or inherit) it rotates round-robin
+	// within its target, so it overrides unpinned core behaviour. Explicit policies are kept.
+	if m.Pinned() && (strategy == "" || strategy == AccountStrategyInherit) {
+		return AccountStrategyRoundRobin
+	}
+	return strategy
 }
 
 // ExplicitAccountStrategy reports whether the member pins accounts itself.
@@ -112,6 +128,8 @@ func (c Combo) Normalize() Combo {
 		member.QuotaPool = strings.TrimSpace(member.QuotaPool)
 		member.AccountStrategy = strings.TrimSpace(member.AccountStrategy)
 		member.AccountPool = strings.TrimSpace(member.AccountPool)
+		member.AccountID = strings.TrimSpace(member.AccountID)
+		member.ConnectionID = strings.TrimSpace(member.ConnectionID)
 		members = append(members, member)
 	}
 	c.Members = members
@@ -154,13 +172,18 @@ func (c Combo) Validate() error {
 		if !validAccountStrategy(member.AccountStrategy) {
 			return fmt.Errorf("combo %q: member %d has unknown accountStrategy %q", c.Name, index, member.AccountStrategy)
 		}
-		// accountPool is the pin boundary: explicit strategies require it and it is meaningless
-		// (and therefore rejected) for unpinned members. quotaPool never substitutes for it.
+		if member.AccountID != "" && member.ConnectionID != "" {
+			return fmt.Errorf("combo %q: member %d (%s) accountId and connectionId are mutually exclusive", c.Name, index, member.Model)
+		}
+		// accountPool is the pool boundary: explicit strategies require it unless the member is
+		// pinned (a pin is its own boundary; a supplied pool then only narrows further). It is
+		// meaningless for members that neither pin nor use a strategy. quotaPool never
+		// substitutes for it.
 		explicit := member.ExplicitAccountStrategy(c)
-		if explicit && member.AccountPool == "" {
+		if explicit && member.AccountPool == "" && !member.Pinned() {
 			return fmt.Errorf("combo %q: member %d (%s) uses accountStrategy %q and requires accountPool", c.Name, index, member.Model, member.EffectiveAccountStrategy(c))
 		}
-		if !explicit && member.AccountPool != "" {
+		if !explicit && member.AccountPool != "" && !member.Pinned() {
 			return fmt.Errorf("combo %q: member %d (%s) sets accountPool without an explicit accountStrategy", c.Name, index, member.Model)
 		}
 	}

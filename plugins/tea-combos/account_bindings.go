@@ -22,7 +22,7 @@ func accountBindingKey(callerScope, sessionIdentity string, combo Combo, member 
 		return ""
 	}
 	sum := sha256.Sum256([]byte(accountBindingVersion + "\x00" + callerScope + "\x00" + sessionIdentity + "\x00" +
-		combo.Name + "\x00" + member.Model + "\x00" + member.Provider + "\x00" + member.AccountPool + "\x00" + strategy))
+		combo.Name + "\x00" + member.Model + "\x00" + member.Provider + "\x00" + member.AccountPool + "\x00" + strategy + pinIdentity(member)))
 	return hex.EncodeToString(sum[:])
 }
 

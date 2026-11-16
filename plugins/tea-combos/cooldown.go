@@ -24,7 +24,7 @@ func newCooldownTracker() *cooldownTracker {
 }
 
 func cooldownKey(comboName string, member Member) string {
-	return comboName + "\x00" + member.Provider + "\x00" + member.Model
+	return comboName + "\x00" + member.Provider + "\x00" + member.Model + pinIdentity(member)
 }
 
 // Cool parks a member for d. A zero or negative duration is a no-op, which is how cooling
