@@ -304,7 +304,7 @@ func TestFreshSnapshotFiltersDisabledUnavailableAndCoolingCredentials(t *testing
 			r := newAccountRouter(sel)
 			r.now = func() time.Time { return now }
 			combo, member := explicitComboMember(AccountStrategyRoundRobin, "claude-ab")
-			plan, cerr := r.plan(accountPlanRequest{Combo: combo, Member: member})
+			plan, cerr := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member})
 			if len(tc.want) == 0 {
 				if cerr == nil || len(plan.Credentials) != 0 {
 					t.Fatalf("every credential filtered: want failure without pins, got %+v %v", plan, cerr)
@@ -344,14 +344,15 @@ func TestFreshSnapshotStaleOrMissingNeverWidensPool(t *testing.T) {
 	r := newAccountRouter(sel)
 	r.now = func() time.Time { return now }
 	combo, member := explicitComboMember(AccountStrategyRoundRobin, "claude-ab")
-	if plan, cerr := r.plan(accountPlanRequest{Combo: combo, Member: member}); cerr == nil || len(plan.Credentials) != 0 {
+	if plan, cerr := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member}); cerr == nil || len(plan.Credentials) != 0 {
 		t.Fatalf("stale snapshot must fail closed: %+v %v", plan, cerr)
 	}
 	none := newWeightedSelector("", 600)
 	defer none.Close()
 	r = newAccountRouter(none)
 	r.now = func() time.Time { return now }
-	if plan, cerr := r.plan(accountPlanRequest{Combo: combo, Member: member}); cerr == nil || len(plan.Credentials) != 0 {
+	r.wait = func(context.Context, time.Duration) bool { return false }
+	if plan, cerr := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member}); cerr == nil || len(plan.Credentials) != 0 {
 		t.Fatalf("missing snapshot path must fail closed: %+v %v", plan, cerr)
 	}
 }

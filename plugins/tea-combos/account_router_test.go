@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -72,7 +73,7 @@ func explicitComboMember(strategy, pool string) (Combo, Member) {
 
 func mustPlan(t *testing.T, r *accountRouter, combo Combo, member Member) accountPlan {
 	t.Helper()
-	plan, err := r.plan(accountPlanRequest{Combo: combo, Member: member})
+	plan, err := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member})
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestAccountPlanQuotaAwareAllExhaustedFailsRetryablyWithoutPins(t *testing.T
 	}
 	r := accountRouterFor(snap)
 	combo, member := explicitComboMember(AccountStrategyQuotaAware, "claude-ab")
-	plan, err := r.plan(accountPlanRequest{Combo: combo, Member: member})
+	plan, err := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member})
 	if err == nil || !err.Retryable || err.Status != http.StatusTooManyRequests || len(plan.Credentials) != 0 {
 		t.Fatalf("plan = %+v err = %v, want retryable 429 and zero pins", plan, err)
 	}
@@ -272,7 +273,7 @@ func TestAccountPlanFailsClosedAndNeverUnpins(t *testing.T) {
 			if tc.member != nil {
 				tc.member(&member)
 			}
-			plan, err := tc.router.plan(accountPlanRequest{Combo: combo, Member: member})
+			plan, err := tc.router.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member})
 			if err == nil {
 				t.Fatalf("expected failure, got plan %+v", plan)
 			}
@@ -299,11 +300,11 @@ func TestAccountPlanUsesPoolProviderEvenWhenMemberSpellsItDifferently(t *testing
 func TestAccountPlanPrefersBoundCredentialOnlyWhenStillEligible(t *testing.T) {
 	r := accountRouterFor(accountTestSnapshot(accountTestNow))
 	combo, member := explicitComboMember(AccountStrategyRoundRobin, "claude-ab")
-	plan, err := r.plan(accountPlanRequest{Combo: combo, Member: member, Bound: "b1"})
+	plan, err := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member, Bound: "b1"})
 	if err != nil || plan.Credentials[0] != "b1" || len(plan.Credentials) != 3 {
 		t.Fatalf("bound credential should lead: %+v %v", plan, err)
 	}
-	plan, err = r.plan(accountPlanRequest{Combo: combo, Member: member, Bound: "c1"})
+	plan, err = r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member, Bound: "c1"})
 	if err != nil || plan.Bound || len(plan.Credentials) != 3 {
 		t.Fatalf("a binding outside the pool must be ignored: %+v %v", plan, err)
 	}

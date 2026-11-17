@@ -119,7 +119,7 @@ func (p *combosPlugin) prepareAccountMember(ctx context.Context, req pluginapi.E
 		prep.bindingKey = accountBindingKey(prep.callerScope, sessionIdentity(req), combo, member, strategy)
 		prep.bound, _ = p.accountBindings.Lookup(prep.bindingKey)
 	}
-	plan, cerr := p.accounts.plan(accountPlanRequest{Combo: combo, Member: member, Bound: prep.bound})
+	plan, cerr := p.accounts.plan(ctx, accountPlanRequest{Combo: combo, Member: member, Bound: prep.bound})
 	if cerr != nil {
 		if prep.bound != "" {
 			p.accountBindings.Remove(prep.bindingKey)
