@@ -1298,26 +1298,43 @@ func buildPools(s quota.Snapshot, explicit []quota.Pool, setup *[]setupItem) []q
 
 // startupInventoryAttempts and startupInventoryDelay shape the retry of the
 // first collection pass. The host hands a plugin its auth inventory only after
-// the plugin registers, so a first pass can see no credentials even though the
-// host has plenty; retrying for a couple of seconds turns that race into a
-// populated snapshot instead of an empty one that blanks every derived pool
-// until the next poll tick.
+// the plugin registers, and it reveals which models each credential serves even
+// later. A pass taken in that window produces either no credentials at all or
+// pools full of credentials that can answer no named model, and publishing it
+// blanks or freezes every derived pool until the next poll tick.
 const (
 	startupInventoryAttempts = 10
 	startupInventoryDelay    = 250 * time.Millisecond
 )
 
-// firstPassWithRetry runs the startup pass and repeats it while the result
-// carries no credentials. A pass that errors is returned immediately: a host or
-// transport failure is not the cold-start race this guards against, and
-// retrying it would only delay the health report. wait receives the delay
-// between attempts and reports whether it completed before the context ended.
+// inventorySettled reports whether the pass is worth publishing: at least one
+// credential exists and every published pool has a member with a known model
+// inventory. Pools are what quota-aware routing acts on, so a pool whose members
+// serve no model is worse than a snapshot taken a few seconds later.
+func inventorySettled(snap quota.Snapshot) bool {
+	if len(snap.Credentials) == 0 {
+		return false
+	}
+	for _, pool := range snap.Pools {
+		if !quota.PoolHasModelSupport(snap, pool) {
+			return false
+		}
+	}
+	return true
+}
+
+// firstPassWithRetry runs the startup pass and repeats it while ready rejects
+// the result. A pass that errors is returned immediately: a host or transport
+// failure is not the cold-start race this guards against, and retrying it would
+// only delay the health report. wait receives the delay between attempts and
+// reports whether it completed before the context ended.
 func firstPassWithRetry(ctx context.Context, attempts int, delay time.Duration,
 	pass func(context.Context) (quota.Snapshot, collectorHealth, error),
+	ready func(quota.Snapshot) bool,
 	wait func(context.Context, time.Duration) bool) (quota.Snapshot, collectorHealth, error) {
 	snap, health, err := pass(ctx)
 	for attempt := 1; attempt < attempts; attempt++ {
-		if err != nil || len(snap.Credentials) > 0 {
+		if err != nil || ready(snap) {
 			return snap, health, err
 		}
 		if !wait(ctx, delay) {
@@ -1391,7 +1408,7 @@ func StartCollector(ctx context.Context, h LoopHooks, refresh <-chan struct{}) <
 				snap, health, err = firstPassWithRetry(pctx, startupInventoryAttempts, startupInventoryDelay,
 					func(c context.Context) (quota.Snapshot, collectorHealth, error) {
 						return col.collect(c, cfg, h.Previous(), h.Inventory)
-					}, waitContext)
+					}, inventorySettled, waitContext)
 			} else {
 				snap, health, err = col.collect(pctx, cfg, h.Previous(), h.Inventory)
 			}

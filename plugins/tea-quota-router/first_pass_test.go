@@ -9,12 +9,30 @@ import (
 	"github.com/the-tea-team/cpa-tea-plugins/internal/tea/quota"
 )
 
-func passSnapshot(credentialIDs ...string) (quota.Snapshot, collectorHealth, error) {
-	snap := quota.Snapshot{SchemaVersion: quota.SchemaVersion}
-	for _, id := range credentialIDs {
-		snap.Credentials = append(snap.Credentials, quota.Credential{ID: id, Provider: "claude"})
+// settledSnapshot is a pass the collector can publish: one subscription pool whose member knows
+// which models it serves.
+func settledSnapshot(credentialIDs ...string) quota.Snapshot {
+	snap := quota.Snapshot{
+		SchemaVersion: quota.SchemaVersion,
+		Accounts:      []quota.Account{{ID: "acct", Provider: "claude", BillingType: "subscription"}},
+		Pools:         []quota.Pool{{ID: "auto-claude-subscription", Provider: "claude", BillingType: "subscription"}},
 	}
-	return snap, collectorHealth{Status: "ok"}, nil
+	for _, id := range credentialIDs {
+		snap.Credentials = append(snap.Credentials, quota.Credential{
+			ID: id, AccountID: "acct", Provider: "claude", Models: []string{"claude-*"},
+		})
+	}
+	return snap
+}
+
+// unreadableSnapshot is what the host returns in the second or two after registration: credentials
+// exist, the pools are built, but no credential knows its models yet.
+func unreadableSnapshot(credentialIDs ...string) quota.Snapshot {
+	snap := settledSnapshot(credentialIDs...)
+	for i := range snap.Credentials {
+		snap.Credentials[i].Models = nil
+	}
+	return snap
 }
 
 // countWaiting returns a wait seam that records calls and always reports that the delay elapsed.
@@ -25,24 +43,45 @@ func countWaiting(waits *int) func(context.Context, time.Duration) bool {
 	}
 }
 
-func TestFirstPassRetriesAnEmptyInventory(t *testing.T) {
+func TestFirstPassRetriesUntilPoolsCanAnswerModels(t *testing.T) {
 	passes, waits := 0, 0
 	snap, health, err := firstPassWithRetry(context.Background(), startupInventoryAttempts, startupInventoryDelay,
 		func(context.Context) (quota.Snapshot, collectorHealth, error) {
 			passes++
 			if passes == 1 {
-				return passSnapshot()
+				return unreadableSnapshot("claude-1"), collectorHealth{Status: "ok"}, nil
 			}
-			return passSnapshot("claude-1")
-		}, countWaiting(&waits))
+			return settledSnapshot("claude-1"), collectorHealth{Status: "ok"}, nil
+		}, inventorySettled, countWaiting(&waits))
+	if err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	if !inventorySettled(snap) {
+		t.Fatal("want the retried, model-complete snapshot")
+	}
+	if health.Status != "ok" {
+		t.Fatalf("health %q, want the retried pass report", health.Status)
+	}
+	if passes != 2 || waits != 1 {
+		t.Fatalf("passes=%d waits=%d, want 2 and 1", passes, waits)
+	}
+}
+
+func TestFirstPassRetriesAnEmptyInventory(t *testing.T) {
+	passes, waits := 0, 0
+	snap, _, err := firstPassWithRetry(context.Background(), startupInventoryAttempts, startupInventoryDelay,
+		func(context.Context) (quota.Snapshot, collectorHealth, error) {
+			passes++
+			if passes == 1 {
+				return quota.Snapshot{SchemaVersion: quota.SchemaVersion}, collectorHealth{Status: "ok"}, nil
+			}
+			return settledSnapshot("claude-1"), collectorHealth{Status: "ok"}, nil
+		}, inventorySettled, countWaiting(&waits))
 	if err != nil {
 		t.Fatalf("first pass: %v", err)
 	}
 	if len(snap.Credentials) != 1 {
 		t.Fatalf("credentials=%d, want the retried pass", len(snap.Credentials))
-	}
-	if health.Status != "ok" {
-		t.Fatalf("health %q, want the retried pass report", health.Status)
 	}
 	if passes != 2 || waits != 1 {
 		t.Fatalf("passes=%d waits=%d, want 2 and 1", passes, waits)
@@ -56,7 +95,7 @@ func TestFirstPassDoesNotRetryAFailedPass(t *testing.T) {
 		func(context.Context) (quota.Snapshot, collectorHealth, error) {
 			passes++
 			return quota.Snapshot{}, collectorHealth{Status: "error"}, wantErr
-		}, countWaiting(&waits)); !errors.Is(err, wantErr) {
+		}, inventorySettled, countWaiting(&waits)); !errors.Is(err, wantErr) {
 		t.Fatalf("err %v, want %v", err, wantErr)
 	}
 	if passes != 1 || waits != 0 {
@@ -64,13 +103,13 @@ func TestFirstPassDoesNotRetryAFailedPass(t *testing.T) {
 	}
 }
 
-func TestFirstPassDoesNotRetryAPopulatedPass(t *testing.T) {
+func TestFirstPassDoesNotRetryASettledPass(t *testing.T) {
 	passes, waits := 0, 0
 	if _, _, err := firstPassWithRetry(context.Background(), startupInventoryAttempts, startupInventoryDelay,
 		func(context.Context) (quota.Snapshot, collectorHealth, error) {
 			passes++
-			return passSnapshot("claude-1", "codex-1")
-		}, countWaiting(&waits)); err != nil {
+			return settledSnapshot("claude-1", "claude-2"), collectorHealth{Status: "ok"}, nil
+		}, inventorySettled, countWaiting(&waits)); err != nil {
 		t.Fatalf("first pass: %v", err)
 	}
 	if passes != 1 || waits != 0 {
@@ -83,13 +122,13 @@ func TestFirstPassStopsAtTheAttemptBudget(t *testing.T) {
 	snap, _, err := firstPassWithRetry(context.Background(), startupInventoryAttempts, startupInventoryDelay,
 		func(context.Context) (quota.Snapshot, collectorHealth, error) {
 			passes++
-			return passSnapshot()
-		}, countWaiting(&waits))
+			return unreadableSnapshot("claude-1"), collectorHealth{Status: "ok"}, nil
+		}, inventorySettled, countWaiting(&waits))
 	if err != nil {
 		t.Fatalf("first pass: %v", err)
 	}
-	if len(snap.Credentials) != 0 {
-		t.Fatalf("credentials=%d, want the empty inventory to be reported honestly", len(snap.Credentials))
+	if inventorySettled(snap) {
+		t.Fatal("want the unreadable inventory to be published honestly after the budget")
 	}
 	if passes != startupInventoryAttempts || waits != startupInventoryAttempts-1 {
 		t.Fatalf("passes=%d waits=%d, want %d and %d", passes, waits, startupInventoryAttempts, startupInventoryAttempts-1)
@@ -101,8 +140,8 @@ func TestFirstPassStopsWhenTheContextEndsFirst(t *testing.T) {
 	if _, _, err := firstPassWithRetry(context.Background(), startupInventoryAttempts, startupInventoryDelay,
 		func(context.Context) (quota.Snapshot, collectorHealth, error) {
 			passes++
-			return passSnapshot()
-		}, func(context.Context, time.Duration) bool {
+			return quota.Snapshot{SchemaVersion: quota.SchemaVersion}, collectorHealth{Status: "ok"}, nil
+		}, inventorySettled, func(context.Context, time.Duration) bool {
 			waits++
 			return false
 		}); err != nil {
@@ -110,6 +149,17 @@ func TestFirstPassStopsWhenTheContextEndsFirst(t *testing.T) {
 	}
 	if passes != 1 || waits != 1 {
 		t.Fatalf("passes=%d waits=%d, want 1 and 1", passes, waits)
+	}
+}
+
+func TestInventorySettledRejectsPoolsWithoutModelSupport(t *testing.T) {
+	if inventorySettled(quota.Snapshot{SchemaVersion: quota.SchemaVersion}) {
+		t.Fatal("an empty snapshot is not settled")
+	}
+	snap := settledSnapshot("claude-1")
+	snap.Pools = append(snap.Pools, quota.Pool{ID: "auto-codex-subscription", Provider: "codex", BillingType: "subscription"})
+	if inventorySettled(snap) {
+		t.Fatal("a pool with no member credential is not settled")
 	}
 }
 
