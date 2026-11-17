@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
@@ -8,6 +9,15 @@ import (
 	"time"
 
 	"github.com/the-tea-team/cpa-tea-plugins/internal/tea/quota"
+)
+
+// snapshotGraceAttempts and snapshotGraceStep bound how long a pinned member waits for the quota
+// collector's first snapshot. Registration happens before the collector publishes anything, so the
+// first combo call after a restart can see an absent or pool-less snapshot; waiting a few seconds
+// bridges that gap. It never substitutes an unpinned credential list: the pool boundary holds.
+const (
+	snapshotGraceAttempts = 25
+	snapshotGraceStep     = 200 * time.Millisecond
 )
 
 // snapshotSource hands the account router the latest published quota snapshot. It does not
@@ -40,10 +50,28 @@ type accountRouter struct {
 	src snapshotSource
 	now func() time.Time
 	rr  *quota.SmoothRR
+	// wait blocks between snapshot attempts and reports whether the caller may keep waiting.
+	// Only the request context and tests stop it early.
+	wait func(context.Context, time.Duration) bool
 }
 
 func newAccountRouter(src snapshotSource) *accountRouter {
-	return &accountRouter{src: src, now: time.Now, rr: quota.NewSmoothRR()}
+	return &accountRouter{src: src, now: time.Now, rr: quota.NewSmoothRR(), wait: waitForSnapshot}
+}
+
+// waitForSnapshot sleeps for d unless the context ends first.
+func waitForSnapshot(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 // accountGroup is one quota account and the credentials that draw on it.
@@ -53,10 +81,27 @@ type accountGroup struct {
 	weight      float64
 }
 
+// readySnapshot returns a snapshot the pool lookup can act on. While the collector has published
+// nothing usable - no snapshot, no pools, or a timestamp from the future - it keeps asking for up to
+// snapshotGraceAttempts, which is the cold-start window right after CPA starts. A stale snapshot that
+// already carries pools is returned at once: that is a wedged collector, not a cold start, and every
+// request must not pay the wait for it.
+func (r *accountRouter) readySnapshot(ctx context.Context) (quota.Snapshot, time.Duration, error) {
+	for attempt := 1; ; attempt++ {
+		snap, maxAge, err := r.src.freshSnapshot(r.now())
+		if err != nil || len(snap.Pools) > 0 {
+			return snap, maxAge, err
+		}
+		if attempt >= snapshotGraceAttempts || !r.wait(ctx, snapshotGraceStep) {
+			return snap, maxAge, err
+		}
+	}
+}
+
 // plan resolves the member's pool against a fresh snapshot. A failed plan never carries pins and
 // callers must not recover from it by dropping the pin: that would let the request escape the
 // pool the operator declared.
-func (r *accountRouter) plan(req accountPlanRequest) (accountPlan, *comboError) {
+func (r *accountRouter) plan(ctx context.Context, req accountPlanRequest) (accountPlan, *comboError) {
 	member := req.Member
 	strategy := member.EffectiveAccountStrategy(req.Combo)
 	if r == nil || r.src == nil {
@@ -72,13 +117,22 @@ func (r *accountRouter) plan(req accountPlanRequest) (accountPlan, *comboError) 
 		return unavailable("member %s has no accountPool", member.Model)
 	}
 
-	now := r.now()
-	snap, maxAge, err := r.src.freshSnapshot(now)
+	// now is read after the wait: a snapshot published during it is newer than any time sample
+	// taken before, and would otherwise look like it came from the future.
+	snap, maxAge, err := r.readySnapshot(ctx)
 	if err != nil {
 		return unavailable("quota snapshot unavailable for member %s: %v", member.Model, err)
 	}
-	if snap.GeneratedAt.IsZero() || snap.GeneratedAt.After(now) || (maxAge > 0 && now.Sub(snap.GeneratedAt) > maxAge) {
-		return unavailable("quota snapshot is stale for member %s", member.Model)
+	now := r.now()
+	target := fmt.Sprintf("member %s", member.Model)
+	if member.AccountPool != "" {
+		target += fmt.Sprintf(" (accountPool %q)", member.AccountPool)
+	}
+	if snap.GeneratedAt.IsZero() {
+		return unavailable("quota snapshot has no observation yet for %s", target)
+	}
+	if snap.GeneratedAt.After(now) || (maxAge > 0 && now.Sub(snap.GeneratedAt) > maxAge) {
+		return unavailable("quota snapshot is stale for %s", target)
 	}
 
 	// A pinned member narrows to exactly its target; an optional accountPool only intersects

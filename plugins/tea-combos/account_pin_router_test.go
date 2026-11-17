@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -25,7 +26,7 @@ func pinMember(model string, mutate func(*Member)) (Combo, Member) {
 func planPin(t *testing.T, r *accountRouter, mutate func(*Member)) accountPlan {
 	t.Helper()
 	combo, member := pinMember("claude-sonnet", mutate)
-	plan, err := r.plan(accountPlanRequest{Combo: combo, Member: member})
+	plan, err := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member})
 	if err != nil {
 		t.Fatalf("plan: %+v", err)
 	}
@@ -35,7 +36,7 @@ func planPin(t *testing.T, r *accountRouter, mutate func(*Member)) accountPlan {
 func planPinErr(t *testing.T, r *accountRouter, mutate func(*Member)) *comboError {
 	t.Helper()
 	combo, member := pinMember("claude-sonnet", mutate)
-	plan, err := r.plan(accountPlanRequest{Combo: combo, Member: member})
+	plan, err := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member})
 	if err == nil {
 		t.Fatalf("plan succeeded with %+v, want a member-side failure", plan)
 	}
@@ -181,7 +182,7 @@ func TestPinNilSourceFailsClosed(t *testing.T) {
 	for name, r := range routers {
 		t.Run(name, func(t *testing.T) {
 			combo, member := pinMember("claude-sonnet", func(m *Member) { m.ConnectionID = "a1" })
-			plan, err := r.plan(accountPlanRequest{Combo: combo, Member: member})
+			plan, err := r.plan(context.Background(), accountPlanRequest{Combo: combo, Member: member})
 			if err == nil || len(plan.Credentials) != 0 {
 				t.Fatalf("a missing source must fail closed: plan=%+v err=%v", plan, err)
 			}

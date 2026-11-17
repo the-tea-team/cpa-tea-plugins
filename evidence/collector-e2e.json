@@ -40,12 +40,12 @@
     {
       "provider": "claude",
       "status": "ok",
-      "plan": "max5"
+      "plan": "pro"
     },
     {
       "provider": "claude",
       "status": "ok",
-      "plan": "pro"
+      "plan": "max5"
     },
     {
       "provider": "openai-compatible-mock",
@@ -53,7 +53,7 @@
       "plan": ""
     }
   ],
-  "mockCallCount": 8,
+  "mockCallCount": 12,
   "poolSummary": [
     {
       "id": "claude-pool",
@@ -69,7 +69,7 @@
       "measuredCapacity": 6,
       "usableCapacity": 6,
       "estimated": true,
-      "nextResetAt": "2026-11-16T15:47:06.339735Z"
+      "nextResetAt": "2026-11-17T22:46:04.188925Z"
     },
     {
       "id": "claude-pool",
@@ -85,7 +85,7 @@
       "measuredCapacity": 6,
       "usableCapacity": 6,
       "estimated": true,
-      "nextResetAt": "2026-11-16T15:47:06.339735Z"
+      "nextResetAt": "2026-11-17T22:46:04.188925Z"
     }
   ]
 }
