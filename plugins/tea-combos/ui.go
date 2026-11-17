@@ -53,5 +53,8 @@ func (p *combosPlugin) handleManagementRequest(ctx context.Context, req pluginap
 	if strings.Contains(req.Path, "/resource/plugins/"+pluginID) {
 		return uiHandler{}.HandleManagement(ctx, req)
 	}
+	if strings.HasSuffix(req.Path, "/management/plugins/"+pluginID+"/targets") {
+		return pinTargetsHandler{source: p.targetSource()}.HandleManagement(ctx, req)
+	}
 	return comboAPIHandler{store: p.store}.HandleManagement(ctx, req)
 }

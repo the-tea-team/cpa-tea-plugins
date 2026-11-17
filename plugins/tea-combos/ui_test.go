@@ -157,33 +157,54 @@ function makePage(store, opts) {
   }
   const requests = [];
   const KNOWN = ["name", "accountStrategy", "strategy", "members", "sessionAffinity", "ttl", "enabled", "cooldownSeconds"];
-  const MKNOWN = ["model", "provider", "weight", "role", "quotaPool", "accountStrategy", "accountPool"];
+  const MKNOWN = ["model", "provider", "weight", "role", "quotaPool", "accountStrategy", "accountPool", "accountId", "connectionId"];
+  const TARGETS = {
+    accounts: [
+      { id: "acct-empty", provider: "codex", label: "Empty" },
+      { id: "acct-a", provider: "codex", label: "Codex A" },
+      { id: "acct-b", provider: "codex", label: "Codex B" },
+      { id: "acct-claude", provider: "claude", label: "Claude A" },
+    ],
+    connections: [
+      { id: "conn-empty", accountId: "acct-empty", provider: "codex", label: "Empty", models: [] },
+      { id: "conn-a1", accountId: "acct-a", provider: "codex", label: "A One", models: ["gpt-x", "m1"], disabled: false, unavailable: false },
+      { id: "conn-a2", accountId: "acct-a", provider: "codex", label: "A Two <script>", models: ["gpt-x"], disabled: true, unavailable: false },
+      { id: "conn-b1", accountId: "acct-b", provider: "codex", label: "B One", models: ["gpt-x"], disabled: false, unavailable: true },
+      { id: "conn-c1", accountId: "acct-claude", provider: "claude", label: "Claude One", models: ["claude-y"], disabled: false, unavailable: false },
+    ],
+  };
   const explicit = (s) => s === "round-robin" || s === "quota-aware-round-robin";
   function validate(c) {
     for (const k of Object.keys(c)) if (!KNOWN.includes(k)) return "unknown field " + k;
     if (!["", "inherit", "round-robin", "quota-aware-round-robin"].includes(c.accountStrategy || "")) return "bad combo accountStrategy";
     for (const [i, mem] of (c.members || []).entries()) {
       for (const k of Object.keys(mem)) if (!MKNOWN.includes(k)) return "unknown member field " + k;
+      if (mem.accountId && mem.connectionId) return "member " + i + " pins accountId and connectionId";
       const eff = mem.accountStrategy || c.accountStrategy || "";
-      if (explicit(eff) && !mem.accountPool) return "member " + i + " requires accountPool";
-      if (!explicit(eff) && mem.accountPool) return "member " + i + " sets accountPool without explicit strategy";
+      if (explicit(eff) && !mem.accountPool && !mem.accountId && !mem.connectionId) return "member " + i + " requires accountPool";
+      if (!explicit(eff) && mem.accountPool && !mem.accountId && !mem.connectionId) return "member " + i + " sets accountPool without explicit strategy";
     }
     return "";
   }
+  let releaseTargets;
+  const targetGate = new Promise((resolve) => { releaseTargets = resolve; });
   async function fetchStub(url, init) {
     init = init || {};
     const method = init.method || "GET";
     const u = new URL(url, "http://host");
     const name = u.searchParams.get("name");
     const body = init.body ? JSON.parse(init.body) : undefined;
-    requests.push({ method, name, body });
+    requests.push({ method, name, body, path: u.pathname, headers: init.headers || {} });
     const reply = (status, data) => ({ ok: status < 400, status, statusText: "", text: async () => data === undefined ? "" : JSON.stringify(data) });
+    if (method === "GET" && u.pathname.endsWith("/targets")) { if (opts.deferTargets) await targetGate; return (opts.targetsStatuses ? opts.targetsStatuses.shift() : opts.targetsStatus) ? reply(503, { error: "targets unavailable" }) : reply(200, TARGETS); }
+    if (opts.dropPin) { /* handled after clone */ }
     if (method === "GET" && !name) return reply(200, { combos: store });
     if (method === "GET") { const c = store.find((x) => x.name === name); return c ? reply(200, c) : reply(404, { error: "not found" }); }
     const err = validate(body);
     if (err) return reply(400, { error: err });
     const saved = JSON.parse(JSON.stringify(body));
     if (opts.dropAccountPool) saved.members.forEach((x) => { delete x.accountPool; });
+    if (opts.dropPin) saved.members.forEach((x) => { delete x.accountId; delete x.connectionId; });
     const idx = store.findIndex((x) => x.name === (name || body.name));
     if (method === "POST") { store.push(saved); return reply(201, saved); }
     if (idx >= 0) store[idx] = saved;
@@ -199,7 +220,7 @@ function makePage(store, opts) {
     fetch: fetchStub, encodeURIComponent, setTimeout, console,
   });
   vm.runInContext(scriptMatch[1], ctx);
-  return { registry, requests, store };
+  return { registry, requests, store, releaseTargets };
 }
 
 const submit = (page) => page.registry["combo-form"].listeners.submit[0]({ preventDefault() {} });
@@ -302,12 +323,135 @@ function seedCombo() {
     out.escape.modelValue = field(memberRows(page)[0], "member-model").value;
     out.escape.poolValue = field(memberRows(page)[0], "member-account-pool").value;
   }
+  // 7-11. Pin controls: filtering, mutual exclusion, saved unknown retention, clear, pool intersection.
+  {
+    const seed = seedCombo();
+    seed.members[0].connectionId = "conn-gone"; delete seed.members[0].accountStrategy;
+    seed.members[1].accountId = "acct-claude"; seed.members[1].accountStrategy = "inherit";
+    const store = [seed]; const page = makePage(store); await flush();
+    clickEdit(page, 0); await flush();
+    const rows = memberRows(page);
+    const opts = (sel) => sel.children.map((o) => ({ value: o.value, text: o.textContent }));
+    const targetsReq = page.requests.find((r) => r.path.endsWith("/targets"));
+    out.pins = {
+      targetsPath: targetsReq && targetsReq.path, auth: targetsReq && targetsReq.headers.Authorization,
+      row0Conn: field(rows[0], "member-connection-pin").value, row0ConnOpts: opts(field(rows[0], "member-connection-pin")),
+      row0AcctOpts: opts(field(rows[0], "member-account-pin")),
+      row1Acct: field(rows[1], "member-account-pin").value, row1AcctOpts: opts(field(rows[1], "member-account-pin")),
+      row1ConnOpts: opts(field(rows[1], "member-connection-pin")),
+      editorText: page.registry["members"].textContent,
+    };
+    // explicit user choice clears the other
+    field(rows[1], "member-connection-pin").value = "conn-c1";
+    (field(rows[1], "member-connection-pin").listeners.change || []).forEach((fn) => fn());
+    (field(rows[1], "member-model").listeners.change || []).forEach((fn) => fn());
+    out.pins.afterConnPick = { acct: field(rows[1], "member-account-pin").value, conn: field(rows[1], "member-connection-pin").value };
+    field(rows[1], "member-account-pin").value = "acct-claude";
+    (field(rows[1], "member-account-pin").listeners.change || []).forEach((fn) => fn());
+    out.pins.afterAcctPick = { acct: field(rows[1], "member-account-pin").value, conn: field(rows[1], "member-connection-pin").value };
+    // untouched row0 keeps unknown pin; row1 account pin + pool should save
+    field(rows[1], "member-account-pool").value = "claude-main";
+    submit(page); await flush();
+    const put = page.requests.find((r) => r.method === "PUT");
+    out.pins.sent = put && put.body; out.pins.error = page.registry["editor-error"].textContent; out.pins.hidden = page.registry["editor-panel"].hidden;
+    // reopen and clear row1 pin explicitly
+    clickEdit(page, 0); await flush();
+    const rows2 = memberRows(page);
+    field(rows2[1], "member-account-pin").value = "";
+    (field(rows2[1], "member-account-pin").listeners.change || []).forEach((fn) => fn());
+    field(rows2[1], "member-provider").value = "other";
+    (field(rows2[1], "member-provider").listeners.change || []).forEach((fn) => fn());
+    field(rows2[1], "member-model").value = "other-model";
+    (field(rows2[1], "member-model").listeners.change || []).forEach((fn) => fn());
+    out.pins.clearedValue = field(rows2[1], "member-account-pin").value;
+  }
+
+  {
+    const seed = seedCombo(); seed.members[0].connectionId = "conn-gone";
+    const page = makePage([seed]); await flush(); clickEdit(page, 0); await flush();
+    const row = memberRows(page)[0]; const sel = field(row, "member-connection-pin");
+    out.savedLabel = sel.children.find((o) => o.value === "conn-gone").textContent;
+    sel.value = "conn-a1"; (sel.listeners.change || []).forEach((fn) => fn());
+    field(row, "member-model").value = "other"; (field(row, "member-model").listeners.change || []).forEach((fn) => fn());
+    out.selectedPin = { value: sel.value, label: sel.children.find((o) => o.value === sel.value).textContent };
+  }
+  {
+    const seed = seedCombo(); seed.members[0].accountId = "acct-zzz";
+    const page = makePage([seed], { targetsStatuses: [503, 0, 0] }); await flush();
+    clickEdit(page, 0); await flush();
+    page.registry["cancel-edit"].listeners.click[0](); clickEdit(page, 0); await flush();
+    out.retry = { count: page.requests.filter((r) => r.path.endsWith("/targets")).length, pin: field(memberRows(page)[0], "member-account-pin").value };
+    page.registry["refresh"].listeners.click[0](); await flush();
+    out.retry.refreshCount = page.requests.filter((r) => r.path.endsWith("/targets")).length;
+    out.retry.refreshPin = field(memberRows(page)[0], "member-account-pin").value;
+  }
+  {
+    const page = makePage([seedCombo()], { deferTargets: true }); await flush();
+    clickEdit(page, 0); await flush();
+    page.registry["forget-key"].listeners.click[0]();
+    page.releaseTargets(); await flush();
+    const sel = field(memberRows(page)[0], "member-connection-pin");
+    out.forgotOptions = sel.children.map((o) => o.value);
+  }
+  // A pending targets response must not restore a user-cleared saved pin.
+  {
+    const seed = seedCombo(); seed.members[0].accountId = "acct-gone";
+    const page = makePage([seed], { deferTargets: true }); await flush();
+    clickEdit(page, 0); await flush();
+    const row = memberRows(page)[0];
+    out.raceInitial = field(row, "member-account-pin").value;
+    field(row, "member-account-pin").value = "";
+    (field(row, "member-account-pin").listeners.change || []).forEach((fn) => fn());
+    page.releaseTargets(); await flush();
+    out.raceAfter = field(row, "member-account-pin").value;
+  }
+
+  // targets failure preserves editing/saving (no pins available, saved pin retained as option)
+  {
+    const seed = seedCombo(); seed.members[0].accountId = "acct-zzz";
+    const store = [seed]; const page = makePage(store, { targetsStatus: 503 }); await flush();
+    clickEdit(page, 0); await flush();
+    const row = memberRows(page)[0];
+    out.targetsFail = { acct: field(row, "member-account-pin").value, notice: page.registry["notice"].textContent + page.registry["editor-error"].textContent };
+    submit(page); await flush();
+    const put = page.requests.find((r) => r.method === "PUT");
+    out.targetsFail.sent = put && put.body; out.targetsFail.hidden = page.registry["editor-panel"].hidden; out.targetsFail.error = page.registry["editor-error"].textContent;
+  }
+
+  // dropPin readback surfaced; explicit strategy now satisfied by pin (no pool needed validation)
+  {
+    const store = [seedCombo()]; const page = makePage(store, { dropPin: true }); await flush();
+    clickEdit(page, 0); await flush();
+    const row = memberRows(page)[0];
+    field(row, "member-connection-pin").value = "conn-a1";
+    (field(row, "member-connection-pin").listeners.change || []).forEach((fn) => fn());
+    submit(page); await flush();
+    out.pinLossy = { error: page.registry["editor-error"].textContent, hidden: page.registry["editor-panel"].hidden };
+  }
+  {
+    const store = [seedCombo()]; const page = makePage(store); await flush();
+    clickEdit(page, 0); await flush();
+    const row = memberRows(page)[0];
+    field(row, "member-account-pool").value = "";
+    field(row, "member-connection-pin").value = "conn-a1";
+    (field(row, "member-connection-pin").listeners.change || []).forEach((fn) => fn());
+    submit(page); await flush();
+    const put = page.requests.find((r) => r.method === "PUT");
+    out.pinSatisfies = { sent: put && put.body, error: page.registry["editor-error"].textContent, hidden: page.registry["editor-panel"].hidden };
+  }
+
   out.violations = violations;
   console.log(JSON.stringify(out));
 })().catch((e) => { console.error(e && e.stack || String(e)); process.exit(1); });
 `
 
 type harnessOut struct {
+	ForgotOptions        []string         `json:"forgotOptions"`
+	SavedLabel           string           `json:"savedLabel"`
+	SelectedPin          map[string]any   `json:"selectedPin"`
+	Retry                map[string]any   `json:"retry"`
+	RaceInitial          string           `json:"raceInitial"`
+	RaceAfter            string           `json:"raceAfter"`
 	EditorText           string           `json:"editorText"`
 	ComboAccountSelected string           `json:"comboAccountSelected"`
 	MemberFields         []map[string]any `json:"memberFields"`
@@ -348,6 +492,39 @@ type harnessOut struct {
 		ModelValue string `json:"modelValue"`
 		PoolValue  string `json:"poolValue"`
 	} `json:"escape"`
+	Pins struct {
+		TargetsPath   string           `json:"targetsPath"`
+		Auth          string           `json:"auth"`
+		Row0Conn      string           `json:"row0Conn"`
+		Row0ConnOpts  []map[string]any `json:"row0ConnOpts"`
+		Row0AcctOpts  []map[string]any `json:"row0AcctOpts"`
+		Row1Acct      string           `json:"row1Acct"`
+		Row1AcctOpts  []map[string]any `json:"row1AcctOpts"`
+		Row1ConnOpts  []map[string]any `json:"row1ConnOpts"`
+		EditorText    string           `json:"editorText"`
+		AfterConnPick map[string]any   `json:"afterConnPick"`
+		AfterAcctPick map[string]any   `json:"afterAcctPick"`
+		Sent          map[string]any   `json:"sent"`
+		Error         string           `json:"error"`
+		Hidden        bool             `json:"hidden"`
+		ClearedValue  string           `json:"clearedValue"`
+	} `json:"pins"`
+	TargetsFail struct {
+		Acct   string         `json:"acct"`
+		Notice string         `json:"notice"`
+		Sent   map[string]any `json:"sent"`
+		Hidden bool           `json:"hidden"`
+		Error  string         `json:"error"`
+	} `json:"targetsFail"`
+	PinLossy struct {
+		Error  string `json:"error"`
+		Hidden bool   `json:"hidden"`
+	} `json:"pinLossy"`
+	PinSatisfies struct {
+		Sent   map[string]any `json:"sent"`
+		Error  string         `json:"error"`
+		Hidden bool           `json:"hidden"`
+	} `json:"pinSatisfies"`
 	Violations []string `json:"violations"`
 }
 
@@ -478,6 +655,126 @@ func TestEmbeddedUIBehaviour(t *testing.T) {
 		}
 		if !jsonEqual(out.Created.Sent, want) {
 			t.Errorf("created payload:\n got  %v\n want %v (error %q)", out.Created.Sent, want, out.Created.Error)
+		}
+	})
+
+	t.Run("pin controls filter and retain", func(t *testing.T) {
+		if !strings.HasSuffix(out.Pins.TargetsPath, "/targets") || out.Pins.Auth != "Bearer secret" {
+			t.Errorf("targets request path/auth = %q %q", out.Pins.TargetsPath, out.Pins.Auth)
+		}
+		if out.Pins.Row0Conn != "conn-gone" {
+			t.Errorf("unknown saved connection pin erased: %q opts=%v", out.Pins.Row0Conn, out.Pins.Row0ConnOpts)
+		}
+		foundGone := false
+		for _, o := range out.Pins.Row0ConnOpts {
+			if o["value"] == "conn-empty" {
+				t.Error("connection without model support offered")
+			}
+			if o["value"] == "conn-gone" && strings.Contains(o["text"].(string), "saved") {
+				foundGone = true
+			}
+		}
+		if !foundGone {
+			t.Errorf("unknown pin not a labeled saved option: %v", out.Pins.Row0ConnOpts)
+		}
+		// row0 gpt-x/codex: accounts acct-a,acct-b only; connections conn-a1,a2,b1 (+gone), disabled/unavailable marked
+		if len(out.Pins.Row0AcctOpts) != 3 { // blank + 2
+			t.Errorf("row0 account opts filtered wrong: %v", out.Pins.Row0AcctOpts)
+		}
+		joined := ""
+		for _, o := range out.Pins.Row0ConnOpts {
+			joined += o["text"].(string) + ";"
+		}
+		if !strings.Contains(joined, "disabled") || !strings.Contains(joined, "unavailable") {
+			t.Errorf("disabled/unavailable not marked: %q", joined)
+		}
+		if out.Pins.Row1Acct != "acct-claude" {
+			t.Errorf("row1 account pin = %q", out.Pins.Row1Acct)
+		}
+		for _, want := range []string{"Pinned account (accountId)", "Pinned connection (connectionId)", "pin overrides"} {
+			if !strings.Contains(out.Pins.EditorText, want) {
+				t.Errorf("pin help missing %q", want)
+			}
+		}
+	})
+
+	t.Run("pin mutual exclusion, clear and pool intersection", func(t *testing.T) {
+		if out.Pins.AfterConnPick["acct"] != "" || out.Pins.AfterConnPick["conn"] != "conn-c1" {
+			t.Errorf("conn pick did not clear account: %v", out.Pins.AfterConnPick)
+		}
+		if out.Pins.AfterAcctPick["conn"] != "" || out.Pins.AfterAcctPick["acct"] != "acct-claude" {
+			t.Errorf("account pick did not clear conn: %v", out.Pins.AfterAcctPick)
+		}
+		if out.Pins.Sent == nil || !out.Pins.Hidden {
+			t.Fatalf("pin+pool save failed: sent=%v hidden=%v error=%q", out.Pins.Sent, out.Pins.Hidden, out.Pins.Error)
+		}
+		members, _ := out.Pins.Sent["members"].([]any)
+		if len(members) != 3 {
+			t.Fatalf("members %v", out.Pins.Sent)
+		}
+		m0, _ := members[0].(map[string]any)
+		m1, _ := members[1].(map[string]any)
+		if m0["connectionId"] != "conn-gone" {
+			t.Errorf("untouched unknown pin not preserved on save: %v", m0)
+		}
+		if m1["accountId"] != "acct-claude" || m1["accountPool"] != "claude-main" || m1["connectionId"] != nil {
+			t.Errorf("pin+pool intersection not saved: %v", m1)
+		}
+		if out.Pins.ClearedValue != "" {
+			t.Errorf("explicit clear failed: %q", out.Pins.ClearedValue)
+		}
+	})
+
+	t.Run("unavailable pin labels", func(t *testing.T) {
+		if out.SavedLabel != "conn-gone (saved pin — unavailable for this model/provider)" {
+			t.Errorf("saved label: %q", out.SavedLabel)
+		}
+		if out.SelectedPin["value"] != "conn-a1" || out.SelectedPin["label"] != "conn-a1 (selected pin — unavailable for this model/provider)" {
+			t.Errorf("selected pin: %v", out.SelectedPin)
+		}
+	})
+	t.Run("targets retry and refresh", func(t *testing.T) {
+		if out.Retry["count"] != float64(2) || out.Retry["refreshCount"] != float64(3) || out.Retry["pin"] != "acct-zzz" || out.Retry["refreshPin"] != "acct-zzz" {
+			t.Errorf("retry: %v", out.Retry)
+		}
+	})
+	t.Run("forgotten key discards pending inventory", func(t *testing.T) {
+		if len(out.ForgotOptions) != 1 || out.ForgotOptions[0] != "" {
+			t.Errorf("stale inventory exposed: %v", out.ForgotOptions)
+		}
+	})
+	t.Run("pending targets respect clear", func(t *testing.T) {
+		if out.RaceInitial != "acct-gone" || out.RaceAfter != "" {
+			t.Errorf("pending targets restored pin: initial=%q after=%q", out.RaceInitial, out.RaceAfter)
+		}
+	})
+	t.Run("targets failure preserves saved pin", func(t *testing.T) {
+		if out.TargetsFail.Acct != "acct-zzz" {
+			t.Errorf("saved pin lost on targets failure: %q", out.TargetsFail.Acct)
+		}
+		if out.TargetsFail.Sent == nil || !out.TargetsFail.Hidden {
+			t.Errorf("save after targets failure broken: hidden=%v error=%q", out.TargetsFail.Hidden, out.TargetsFail.Error)
+		} else {
+			members, _ := out.TargetsFail.Sent["members"].([]any)
+			m0, _ := members[0].(map[string]any)
+			if m0["accountId"] != "acct-zzz" {
+				t.Errorf("pin erased on targets-failure save: %v", m0)
+			}
+		}
+	})
+
+	t.Run("pin readback and pin satisfies explicit strategy", func(t *testing.T) {
+		if !strings.Contains(out.PinLossy.Error, "read-back") || !strings.Contains(out.PinLossy.Error, "connectionId") || out.PinLossy.Hidden {
+			t.Errorf("pin loss not surfaced: %q hidden=%v", out.PinLossy.Error, out.PinLossy.Hidden)
+		}
+		if out.PinSatisfies.Sent == nil || !out.PinSatisfies.Hidden {
+			t.Errorf("pin should satisfy explicit strategy without pool: error=%q", out.PinSatisfies.Error)
+		} else {
+			members, _ := out.PinSatisfies.Sent["members"].([]any)
+			m0, _ := members[0].(map[string]any)
+			if m0["connectionId"] != "conn-a1" || m0["accountPool"] != nil {
+				t.Errorf("pin-satisfies payload wrong: %v", m0)
+			}
 		}
 	})
 

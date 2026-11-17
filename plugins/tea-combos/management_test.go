@@ -447,13 +447,13 @@ func TestManagementRegistrationShape(t *testing.T) {
 	if resource.Handler == nil {
 		t.Fatal("resource has no handler")
 	}
-	if len(resp.Routes) != 4 {
-		t.Fatalf("routes = %d, want 4", len(resp.Routes))
+	if len(resp.Routes) != 5 {
+		t.Fatalf("routes = %d, want 5", len(resp.Routes))
 	}
 	methods := map[string]bool{}
 	for _, route := range resp.Routes {
 		methods[route.Method] = true
-		if route.Path != testComboCollection {
+		if route.Path != testComboCollection && !(route.Path == testManagementBase+"/plugins/tea-combos/targets" && route.Method == http.MethodGet) {
 			t.Fatalf("route path = %q, want %q from the host BasePath", route.Path, testComboCollection)
 		}
 		if route.Handler == nil {
@@ -530,14 +530,14 @@ func TestABIManagementRegisterShape(t *testing.T) {
 	if err := json.Unmarshal(env.Result, &resp); err != nil {
 		t.Fatalf("decode result: %v", err)
 	}
-	if len(resp.Routes) != 4 || len(resp.Resources) != 1 {
-		t.Fatalf("routes/resources = %d/%d, want 4/1", len(resp.Routes), len(resp.Resources))
+	if len(resp.Routes) != 5 || len(resp.Resources) != 1 {
+		t.Fatalf("routes/resources = %d/%d, want 5/1", len(resp.Routes), len(resp.Resources))
 	}
 	if resp.Resources[0].Menu != "Combos" || resp.Resources[0].Path != "/combos" {
 		t.Fatalf("resource = %#v", resp.Resources[0])
 	}
 	for _, route := range resp.Routes {
-		if route.Path != testComboCollection {
+		if route.Path != testComboCollection && !(route.Path == testManagementBase+"/plugins/tea-combos/targets" && route.Method == http.MethodGet) {
 			t.Fatalf("route path = %q", route.Path)
 		}
 	}

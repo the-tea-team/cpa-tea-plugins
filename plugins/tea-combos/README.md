@@ -82,6 +82,30 @@ Runtime edits always win and are never overwritten by config.
 
 An unknown strategy is a configuration error. `weighted-round-robin` uses positive member `weight`; `quota-aware-round-robin` adjusts those weights by observed allowance/reset pressure from `quotaPool`. Primary members are selected before any `role: fallback` members. Cross-provider quota percentages are not token-equivalent.
 
+### Optional account or connection pins (v0.5.0)
+
+Set one optional pin on an individual member, alongside its optional `provider`:
+
+- `accountId`: only credentials belonging to that quota-account identity may be used. Eligible connections within that account can rotate/retry (at most eight).
+- `connectionId`: exactly one native credential ID; never a sibling connection. This is not its `authIndex`.
+
+The UI discovers choices from authenticated `GET /v0/management/plugins/tea-combos/targets`; account/connection labels are display-only and opaque IDs are persisted. Inventory comes from the configured fresh `quotaSnapshotPath`, so this feature requires the observer snapshot even without quota weighting. Missing/stale/deleted targets fail closed. The static public resource never contains inventory.
+
+Both pins cannot be set together. Provider, if specified, must match; otherwise it is inferred from the target. A pin overrides `inherit` into round-robin within that target; an explicit quota-aware account strategy is retained. `accountPool` is optional for a pin; when supplied it further intersects the target, never widens it. Model support, disabled state, cooldowns, known exhaustion and caller restrictions remain enforced. `quotaPool` stays observation-only.
+
+```yaml
+name: account-demo
+strategy: failover
+members:
+  - model: claude-sonnet
+    provider: claude
+    accountId: opaque-account-id
+  - model: claude-sonnet
+    connectionId: opaque-native-credential-id
+```
+
+If a target cannot serve, that member may fall through to the next configured member. It never drops its pin to escape failure. Streaming retries remain limited to before the first payload. Pin edits invalidate the affected affinity binding; same-model members pinned to different targets have separate cooldown/rotation identities. Leaving pins blank preserves existing behavior. Saved targets missing from the current inventory remain visible in the editor instead of being silently erased.
+
 ### Independent account selection (v0.4.0)
 
 `accountStrategy` is independent of member `strategy`: `inherit` leaves account choice to CPA (including any installed provider scheduler), `round-robin` distributes equally across quota accounts, and `quota-aware-round-robin` weights them by usable quota/reset pressure. Numeric account priority is intentionally ignored for explicit strategies. A member may override `accountStrategy`; omitted means the combo default, explicit `inherit` means no account pin.

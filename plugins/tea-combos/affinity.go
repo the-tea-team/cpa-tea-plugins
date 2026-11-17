@@ -21,12 +21,17 @@ const (
 // AffinityBinding is one persisted (combo, session) -> member binding. Key is the SHA-256
 // session key scoped to the combo; no raw prompt text or header value is ever stored.
 type AffinityBinding struct {
-	Key            string    `json:"key"`
-	Combo          string    `json:"combo"`
-	MemberIndex    int       `json:"memberIndex"`
-	MemberModel    string    `json:"memberModel"`
-	MemberProvider string    `json:"memberProvider,omitempty"`
-	ExpiresAt      time.Time `json:"expiresAt"`
+	Key            string `json:"key"`
+	Combo          string `json:"combo"`
+	MemberIndex    int    `json:"memberIndex"`
+	MemberModel    string `json:"memberModel"`
+	MemberProvider string `json:"memberProvider,omitempty"`
+	// MemberAccountID and MemberConnectionID record the member's pin so an edited target never
+	// inherits a binding made for another one. Both are absent for legacy no-pin bindings,
+	// which therefore stay readable and keep matching unpinned members.
+	MemberAccountID    string    `json:"memberAccountId,omitempty"`
+	MemberConnectionID string    `json:"memberConnectionId,omitempty"`
+	ExpiresAt          time.Time `json:"expiresAt"`
 }
 
 type affinityEntry struct {
@@ -118,7 +123,8 @@ func (a *Affinity) Resolve(combo Combo, req pluginapi.ExecutorRequest) (string, 
 		return key, -1, false
 	}
 	member := combo.Members[index]
-	if member.Model != binding.MemberModel || member.Provider != binding.MemberProvider {
+	if member.Model != binding.MemberModel || member.Provider != binding.MemberProvider ||
+		member.AccountID != binding.MemberAccountID || member.ConnectionID != binding.MemberConnectionID {
 		a.removeLocked(key)
 		return key, -1, false
 	}
@@ -135,12 +141,14 @@ func (a *Affinity) Bind(key string, memberIndex int, combo Combo) {
 	}
 	member := combo.Members[memberIndex]
 	binding := AffinityBinding{
-		Key:            key,
-		Combo:          combo.Name,
-		MemberIndex:    memberIndex,
-		MemberModel:    member.Model,
-		MemberProvider: member.Provider,
-		ExpiresAt:      a.now().Add(comboAffinityTTL(combo)),
+		Key:                key,
+		Combo:              combo.Name,
+		MemberIndex:        memberIndex,
+		MemberModel:        member.Model,
+		MemberProvider:     member.Provider,
+		MemberAccountID:    member.AccountID,
+		MemberConnectionID: member.ConnectionID,
+		ExpiresAt:          a.now().Add(comboAffinityTTL(combo)),
 	}
 
 	a.mu.Lock()

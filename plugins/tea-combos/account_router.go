@@ -113,7 +113,7 @@ func (r *accountRouter) plan(ctx context.Context, req accountPlanRequest) (accou
 	unavailable := func(format string, args ...any) (accountPlan, *comboError) {
 		return accountPlan{}, &comboError{Status: http.StatusServiceUnavailable, Retryable: true, Message: fmt.Sprintf(format, args...)}
 	}
-	if member.AccountPool == "" {
+	if member.AccountPool == "" && !member.Pinned() {
 		return unavailable("member %s has no accountPool", member.Model)
 	}
 
@@ -121,38 +121,77 @@ func (r *accountRouter) plan(ctx context.Context, req accountPlanRequest) (accou
 	// taken before, and would otherwise look like it came from the future.
 	snap, maxAge, err := r.readySnapshot(ctx)
 	if err != nil {
-		return unavailable("quota snapshot unavailable for accountPool %q: %v", member.AccountPool, err)
+		return unavailable("quota snapshot unavailable for member %s: %v", member.Model, err)
 	}
 	now := r.now()
+	target := fmt.Sprintf("member %s", member.Model)
+	if member.AccountPool != "" {
+		target += fmt.Sprintf(" (accountPool %q)", member.AccountPool)
+	}
 	if snap.GeneratedAt.IsZero() {
-		return unavailable("quota snapshot has no observation yet for accountPool %q", member.AccountPool)
+		return unavailable("quota snapshot has no observation yet for %s", target)
 	}
 	if snap.GeneratedAt.After(now) || (maxAge > 0 && now.Sub(snap.GeneratedAt) > maxAge) {
-		return unavailable("quota snapshot is stale for accountPool %q", member.AccountPool)
+		return unavailable("quota snapshot is stale for %s", target)
 	}
 
-	var pool *quota.Pool
-	for i := range snap.Pools {
-		if snap.Pools[i].ID == member.AccountPool {
-			pool = &snap.Pools[i]
-			break
+	// A pinned member narrows to exactly its target; an optional accountPool only intersects
+	// that target further and is never ignored. Neither path may widen the candidate set.
+	var provider string
+	var credentials []quota.Credential
+	if member.Pinned() {
+		targetProvider, targetCreds, failure := r.resolvePin(snap, member)
+		if failure != "" {
+			return unavailable("%s", failure)
+		}
+		provider = targetProvider
+		if member.Provider != "" && !strings.EqualFold(member.Provider, provider) {
+			return unavailable("pinned target of member %s serves provider %q, not %q", member.Model, provider, member.Provider)
+		}
+		if member.AccountPool != "" {
+			pool := findPool(snap, member.AccountPool)
+			if pool == nil {
+				return unavailable("accountPool %q is not in the quota snapshot", member.AccountPool)
+			}
+			if !strings.EqualFold(pool.Provider, provider) {
+				return unavailable("accountPool %q serves provider %q, not the pinned target's %q", member.AccountPool, pool.Provider, provider)
+			}
+			inPool := map[string]bool{}
+			for _, c := range quota.PoolCredentials(snap, pool.ID, member.Model, now) {
+				inPool[c.ID] = true
+			}
+			kept := targetCreds[:0:0]
+			for _, c := range targetCreds {
+				if inPool[c.ID] {
+					kept = append(kept, c)
+				}
+			}
+			targetCreds = kept
+		}
+		credentials = targetCreds
+		if len(credentials) == 0 {
+			return unavailable("pinned target of member %s has no usable credential for model %s", member.Model, member.Model)
+		}
+	} else {
+		pool := findPool(snap, member.AccountPool)
+		if pool == nil {
+			return unavailable("accountPool %q is not in the quota snapshot", member.AccountPool)
+		}
+		if member.Provider != "" && !strings.EqualFold(member.Provider, pool.Provider) {
+			return unavailable("accountPool %q serves provider %q, not %q", member.AccountPool, pool.Provider, member.Provider)
+		}
+		provider = pool.Provider
+		credentials = quota.PoolCredentials(snap, pool.ID, member.Model, now)
+		if len(credentials) == 0 {
+			return unavailable("accountPool %q has no usable credential for model %s", member.AccountPool, member.Model)
 		}
 	}
-	if pool == nil {
-		return unavailable("accountPool %q is not in the quota snapshot", member.AccountPool)
-	}
-	if member.Provider != "" && !strings.EqualFold(member.Provider, pool.Provider) {
-		return unavailable("accountPool %q serves provider %q, not %q", member.AccountPool, pool.Provider, member.Provider)
-	}
-	provider := pool.Provider
 
-	credentials := quota.PoolCredentials(snap, pool.ID, member.Model, now)
-	if len(credentials) == 0 {
-		return unavailable("accountPool %q has no usable credential for model %s", member.AccountPool, member.Model)
-	}
-
-	groups := r.groupAccounts(snap, credentials, member.Model, strategy, now, maxAge)
+	groups := r.groupAccounts(snap, credentials, member.Model, strategy, member.Pinned(), now, maxAge)
 	if len(groups) == 0 {
+		if member.Pinned() {
+			return accountPlan{}, &comboError{Status: http.StatusTooManyRequests, Retryable: true, Message: fmt.Sprintf("the pinned account of member %s is exhausted", member.Model)}
+		}
 		return accountPlan{}, &comboError{Status: http.StatusTooManyRequests, Retryable: true, Message: fmt.Sprintf("every account in accountPool %q is exhausted", member.AccountPool)}
 	}
 
@@ -240,7 +279,7 @@ func interleaveCredentials(lists [][]string, limit int) []string {
 // groupAccounts deduplicates credentials into quota accounts and scores them. Credentials that
 // carry no account id cannot be deduplicated and each count as their own account with unknown
 // quota. Priority is deliberately ignored: ordering is by id.
-func (r *accountRouter) groupAccounts(snap quota.Snapshot, credentials []quota.Credential, model, strategy string, now time.Time, maxAge time.Duration) []accountGroup {
+func (r *accountRouter) groupAccounts(snap quota.Snapshot, credentials []quota.Credential, model, strategy string, pinned bool, now time.Time, maxAge time.Duration) []accountGroup {
 	accounts := make(map[string]quota.Account, len(snap.Accounts))
 	for _, a := range snap.Accounts {
 		accounts[a.ID] = a
@@ -273,13 +312,15 @@ func (r *accountRouter) groupAccounts(snap quota.Snapshot, credentials []quota.C
 		g := byID[id]
 		sort.Strings(g.credentials)
 		s := scored{group: g}
-		if strategy == AccountStrategyQuotaAware {
+		// A hard pin never targets a known-empty account, whatever the strategy: there is no
+		// sibling to escape to, so the member fails and the combo falls to its next member.
+		if strategy == AccountStrategyQuotaAware || pinned {
 			if account, ok := accounts[id]; ok {
 				score := quota.AccountScore(account, model, now, maxAge)
 				if score.Known && score.Exhausted {
 					continue // known-empty accounts are never pinned
 				}
-				if score.Known {
+				if score.Known && strategy == AccountStrategyQuotaAware {
 					s.known, s.value = true, score.Value
 					knownSum += score.Value
 					knownCount++
@@ -343,9 +384,91 @@ func (r *accountRouter) rotate(key string, ids []string, bound bool, boundID str
 	return out
 }
 
+// findPool returns the named pool of the snapshot, or nil.
+func findPool(snap quota.Snapshot, id string) *quota.Pool {
+	for i := range snap.Pools {
+		if snap.Pools[i].ID == id {
+			return &snap.Pools[i]
+		}
+	}
+	return nil
+}
+
+// resolvePin narrows the snapshot to the member's exact target and returns the target's
+// provider with its usable credentials for the member's model. Nothing is guessed: ids are
+// matched verbatim against the snapshot (never labels or auth indexes) and an unknown, empty
+// or provider-inconsistent target yields a non-empty failure and no credentials. The shared
+// snapshot is not modified; model support and usability reuse the core quota helpers through a
+// private, call-local pool.
+func (r *accountRouter) resolvePin(snap quota.Snapshot, member Member) (string, []quota.Credential, string) {
+	var provider string
+	var ids []string
+	switch {
+	case member.ConnectionID != "":
+		var found *quota.Credential
+		for i := range snap.Credentials {
+			if snap.Credentials[i].ID == member.ConnectionID {
+				found = &snap.Credentials[i]
+				break
+			}
+		}
+		if found == nil {
+			return "", nil, fmt.Sprintf("the pinned connection of member %s is not in the quota snapshot", member.Model)
+		}
+		provider = found.Provider
+		if found.AccountID != "" {
+			account := accountByID(snap, found.AccountID)
+			if account == nil || !strings.EqualFold(account.Provider, provider) {
+				return "", nil, fmt.Sprintf("the pinned connection of member %s has an inconsistent account", member.Model)
+			}
+		}
+		ids = []string{found.ID}
+	default:
+		account := accountByID(snap, member.AccountID)
+		if account == nil {
+			return "", nil, fmt.Sprintf("the pinned account of member %s is not in the quota snapshot", member.Model)
+		}
+		provider = account.Provider
+		for _, c := range snap.Credentials {
+			if c.AccountID == account.ID && c.Provider == provider {
+				ids = append(ids, c.ID)
+			}
+		}
+		if len(ids) == 0 {
+			return "", nil, fmt.Sprintf("the pinned account of member %s has no connection", member.Model)
+		}
+	}
+	const privatePool = "\x00tea-combos-pin"
+	scoped := snap
+	scoped.Pools = []quota.Pool{{ID: privatePool, Provider: provider, CredentialIDs: ids}}
+	return provider, quota.PoolCredentials(scoped, privatePool, member.Model, r.now()), ""
+}
+
+func accountByID(snap quota.Snapshot, id string) *quota.Account {
+	for i := range snap.Accounts {
+		if snap.Accounts[i].ID == id {
+			return &snap.Accounts[i]
+		}
+	}
+	return nil
+}
+
+// pinIdentity is appended to identity keys only for pinned members, so legacy no-pin identities
+// stay byte-for-byte what they were while two members that differ only in target (or in
+// account-vs-connection kind) never share rotation, cooldown or binding state.
+func pinIdentity(member Member) string {
+	switch {
+	case member.AccountID != "":
+		return "\x00account=" + member.AccountID
+	case member.ConnectionID != "":
+		return "\x00connection=" + member.ConnectionID
+	}
+	return ""
+}
+
 // accountStateKey is the shared rotation scope. It names the combo and the member's model,
-// provider, pool and effective strategy, so two combos that reuse one model with different
-// account policies never share counters.
+// provider, pool, effective strategy and pinned target, so two combos that reuse one model with
+// different account policies, or two members pinned to different targets, never share counters.
 func accountStateKey(combo Combo, member Member, strategy string) string {
-	return strings.Join([]string{combo.Name, member.Model, member.Provider, member.AccountPool, strategy}, "\x00")
+	return strings.Join([]string{combo.Name, member.Model, member.Provider, member.AccountPool, strategy}, "\x00") + pinIdentity(member)
 }

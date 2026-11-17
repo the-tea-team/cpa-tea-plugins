@@ -58,6 +58,7 @@ jobs:
           python3 scripts/quota-collector-e2e.py
           python3 scripts/quota-routing-e2e.py
           python3 scripts/quota-subscription-e2e.py
+          python3 scripts/combo-pins-e2e.py
 
       - uses: actions/upload-artifact@v4
         with:
@@ -70,3 +71,4 @@ jobs:
             evidence/collector-e2e.json
             evidence/quota-routing-e2e.json
             evidence/quota-subscription-e2e.json
+            evidence/combo-pins-e2e.json
