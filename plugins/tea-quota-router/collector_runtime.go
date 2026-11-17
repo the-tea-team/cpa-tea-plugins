@@ -1296,6 +1296,53 @@ func buildPools(s quota.Snapshot, explicit []quota.Pool, setup *[]setupItem) []q
 
 // ---- background loop ---------------------------------------------------------
 
+// startupInventoryAttempts and startupInventoryDelay shape the retry of the
+// first collection pass. The host hands a plugin its auth inventory only after
+// the plugin registers, so a first pass can see no credentials even though the
+// host has plenty; retrying for a couple of seconds turns that race into a
+// populated snapshot instead of an empty one that blanks every derived pool
+// until the next poll tick.
+const (
+	startupInventoryAttempts = 10
+	startupInventoryDelay    = 250 * time.Millisecond
+)
+
+// firstPassWithRetry runs the startup pass and repeats it while the result
+// carries no credentials. A pass that errors is returned immediately: a host or
+// transport failure is not the cold-start race this guards against, and
+// retrying it would only delay the health report. wait receives the delay
+// between attempts and reports whether it completed before the context ended.
+func firstPassWithRetry(ctx context.Context, attempts int, delay time.Duration,
+	pass func(context.Context) (quota.Snapshot, collectorHealth, error),
+	wait func(context.Context, time.Duration) bool) (quota.Snapshot, collectorHealth, error) {
+	snap, health, err := pass(ctx)
+	for attempt := 1; attempt < attempts; attempt++ {
+		if err != nil || len(snap.Credentials) > 0 {
+			return snap, health, err
+		}
+		if !wait(ctx, delay) {
+			return snap, health, err
+		}
+		snap, health, err = pass(ctx)
+	}
+	return snap, health, err
+}
+
+// waitContext sleeps for d unless the context ends first.
+func waitContext(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 // LoopHooks wires the collector loop to parent state. All hooks run on the
 // loop goroutine only; Publish must be safe to call from it (the parent takes
 // its own lock). On a pass error Publish receives the unchanged previous
@@ -1327,10 +1374,27 @@ func StartCollector(ctx context.Context, h LoopHooks, refresh <-chan struct{}) <
 	}
 	go func() {
 		defer close(done)
+		first := true
 		for {
 			cfg := h.Config()
 			pctx, cancel := context.WithTimeout(ctx, passTimeout)
-			snap, health, err := col.collect(pctx, cfg, h.Previous(), h.Inventory)
+			var (
+				snap   quota.Snapshot
+				health collectorHealth
+				err    error
+			)
+			if first {
+				// The host loads plugins before its auth inventory is complete, so the first
+				// pass may legitimately see no credentials. Publishing that pass would blank
+				// every derived pool until the next tick, so retry it first.
+				first = false
+				snap, health, err = firstPassWithRetry(pctx, startupInventoryAttempts, startupInventoryDelay,
+					func(c context.Context) (quota.Snapshot, collectorHealth, error) {
+						return col.collect(c, cfg, h.Previous(), h.Inventory)
+					}, waitContext)
+			} else {
+				snap, health, err = col.collect(pctx, cfg, h.Previous(), h.Inventory)
+			}
 			cancel()
 			if ctx.Err() != nil {
 				return

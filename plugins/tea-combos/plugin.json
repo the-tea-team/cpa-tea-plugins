@@ -1,9 +1,1 @@
-{
-  "id": "tea-combos",
-  "name": "Tea Combos",
-  "description": "Named model combos with round-robin and failover across providers, executed through CPA's own provider path.",
-  "author": "The Tea Team",
-  "version": "0.4.0",
-  "license": "MIT",
-  "tags": ["routing", "models", "failover", "round-robin"]
-}
+{"id":"tea-combos","name":"Tea Combos","description":"Named model combos with round-robin and failover across providers, executed through CPA's own provider path.","author":"The Tea Team","version":"0.4.1","license":"MIT","tags":["routing","models","failover","round-robin"]}
