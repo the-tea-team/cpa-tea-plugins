@@ -14,7 +14,7 @@ Native CPA plugin `tea-quota-router` v0.2.0. CPA SDK pinned to v8.0.69. Linux is
 - Shadow-default, provider-opt-in quota-aware credential scheduler. Core-provided eligibility remains authoritative. `quotaAcrossPriorities: true` intentionally ignores numeric account priority (default false preserves tiers). Selection weights are request-share heuristics, not guaranteed token allocation.
 - Embedded `/v0/resource/plugins/tea-quota-router/capacity` dashboard; all data requires management authentication.
 - Transactional `state-v1.json` owns observations, overrides and materialized state. The shared `snapshot-v1.json` and legacy `overrides.json` are derived exports; export failure is reported and repaired on restart.
-- The first collection pass retries while the host reports no credentials (up to ten attempts, 250 ms apart). CPA registers plugins before its auth inventory is readable, and publishing that first empty pass would blank every derived pool until the next poll tick; the retry makes a restart publish a populated snapshot instead.
+- The first collection pass retries while the host's inventory is still unreadable (up to ten attempts, 250 ms apart). CPA registers plugins before it can list credentials, and reveals which models each credential serves even later, so an early pass publishes either no pools or pools whose members answer no model; either one freezes quota-aware routing until the next poll tick. A pass counts as publishable when every pool it built has at least one member with a known model inventory.
 
 ## Configure
 

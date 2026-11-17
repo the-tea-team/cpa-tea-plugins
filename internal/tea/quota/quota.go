@@ -293,6 +293,19 @@ func poolMemberCredentials(s Snapshot, p Pool) []Credential {
 	return out
 }
 
+// PoolHasModelSupport reports whether at least one member credential of the pool has a known model
+// inventory. A pool can look populated - its credentials exist - while the host has not published
+// which models they serve, and then nothing in it can answer a named model. Callers use this to
+// tell "the fleet shrank" from "the inventory is not readable yet".
+func PoolHasModelSupport(s Snapshot, p Pool) bool {
+	for _, c := range poolMemberCredentials(s, p) {
+		if len(c.Models) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func usableCredential(c Credential, now time.Time) bool {
 	if c.Disabled || c.Unavailable {
 		return false
