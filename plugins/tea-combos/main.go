@@ -21,7 +21,7 @@ const (
 	defaultStateFileName = "tea-combos.state.json"
 )
 
-var pluginVersion = "0.6.0"
+var pluginVersion = "0.6.1"
 
 // defaultCooldownSeconds parks a member after a member-side failure when neither the combo nor
 // the plugin config overrides the window.
@@ -88,7 +88,7 @@ func newCombosPlugin(configYAML []byte, pluginDir string) (*combosPlugin, error)
 		}
 	}
 	weighted := newWeightedSelector(cfg.QuotaSnapshotPath, cfg.QuotaMaxAgeSeconds)
-	weighted.opts = quota.ScoreOptions{ResetBoost: cfg.ResetBoost}
+	weighted.opts = quota.ScoreOptions{ResetBoost: cfg.ResetBoost, DrainToZero: cfg.DrainToZero}
 	return &combosPlugin{
 		store:           store,
 		roundRobin:      newRoundRobinSelector(),
@@ -168,6 +168,11 @@ func (p *combosPlugin) plugin() pluginapi.Plugin {
 					Name:        "resetBoost",
 					Type:        pluginapi.ConfigFieldTypeObject,
 					Description: "Favour accounts whose weekly window resets soon: {horizonHours, maxMultiplier}. Omit to disable.",
+				},
+				{
+					Name:        "drainToZero",
+					Type:        pluginapi.ConfigFieldTypeBoolean,
+					Description: "Drop the headroom guard: accounts keep full weight until a window is exhausted.",
 				},
 				{
 					Name:        "combos",

@@ -40,7 +40,9 @@ type Config struct {
 	MaxAgeSeconds         int               `json:"maxAgeSeconds" yaml:"maxAgeSeconds"`
 	// ResetBoost multiplies the score of accounts whose weekly window resets
 	// within horizonHours, so quota that would expire gets spent first.
-	ResetBoost          quota.ResetBoost           `json:"resetBoost" yaml:"resetBoost"`
+	ResetBoost quota.ResetBoost `json:"resetBoost" yaml:"resetBoost"`
+	// DrainToZero disables the headroom guard (see quota.ScoreOptions).
+	DrainToZero         bool                       `json:"drainToZero" yaml:"drainToZero"`
 	Pools               []quota.Pool               `json:"pools" yaml:"pools"`
 	AccountOverrides    map[string]AccountOverride `json:"accountOverrides" yaml:"accountOverrides"`
 	FixtureSnapshotPath string                     `json:"fixtureSnapshotPath" yaml:"fixtureSnapshotPath"`

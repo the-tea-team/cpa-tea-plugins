@@ -68,6 +68,10 @@ func (b ResetBoost) multiplier(w Window, now time.Time) float64 {
 // ScoreOptions tunes AccountScoreWith. The zero value reproduces AccountScore.
 type ScoreOptions struct {
 	ResetBoost ResetBoost
+	// DrainToZero drops the headroom guard, so an account keeps its full
+	// weight until a window is actually exhausted. Use it when leftover quota
+	// is worth more than the occasional 429 at the very end of a window.
+	DrainToZero bool
 }
 
 // AccountScoreWith is AccountScore plus optional tuning. The reset boost is
@@ -94,7 +98,7 @@ func AccountScoreWith(a Account, model string, now time.Time, maxAge time.Durati
 			return Score{Value: 0, Known: true, Exhausted: true,
 				Reasons: []string{"window " + w.ID + " exhausted"}}
 		}
-		if g := math.Min(1, r/0.10); g < guard {
+		if g := math.Min(1, r/0.10); !opts.DrainToZero && g < guard {
 			guard = g
 		}
 		if w.Capacity == nil || !finite(*w.Capacity) || *w.Capacity <= 0 {

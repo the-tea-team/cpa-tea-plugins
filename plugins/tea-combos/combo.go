@@ -212,6 +212,7 @@ type seedConfig struct {
 	QuotaSnapshotPath  string
 	QuotaMaxAgeSeconds int
 	ResetBoost         quota.ResetBoost
+	DrainToZero        bool
 	Combos             []Combo
 	// CooldownSeconds is the plugin-wide cooling window. Nil means the built-in default;
 	// zero disables cooling.
@@ -234,6 +235,7 @@ func parseSeedConfig(raw []byte) (seedConfig, error) {
 		QuotaSnapshotPath  string           `yaml:"quotaSnapshotPath"`
 		QuotaMaxAgeSeconds int              `yaml:"quotaMaxAgeSeconds"`
 		ResetBoost         quota.ResetBoost `yaml:"resetBoost"`
+		DrainToZero        bool             `yaml:"drainToZero"`
 		CooldownSeconds    *int             `yaml:"cooldownSeconds"`
 		MaxCooldownSeconds *int             `yaml:"maxCooldownSeconds"`
 		Combos             yaml.Node        `yaml:"combos"`
@@ -251,6 +253,7 @@ func parseSeedConfig(raw []byte) (seedConfig, error) {
 		return cfg, err
 	}
 	cfg.ResetBoost = doc.ResetBoost
+	cfg.DrainToZero = doc.DrainToZero
 	cfg.CooldownSeconds = doc.CooldownSeconds
 	cfg.MaxCooldownSeconds = doc.MaxCooldownSeconds
 	if doc.CooldownSeconds != nil && *doc.CooldownSeconds < 0 {

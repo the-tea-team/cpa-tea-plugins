@@ -301,3 +301,16 @@ func TestResetBoostValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestDrainToZeroDropsHeadroomGuard(t *testing.T) {
+	a := weeklyAccount("a", 0.4, 0.97, t0.Add(30*time.Hour)) // 3% weekly left
+	guarded := AccountScoreWith(a, "m", t0, 10*time.Minute, ScoreOptions{})
+	drained := AccountScoreWith(a, "m", t0, 10*time.Minute, ScoreOptions{DrainToZero: true})
+	if ratio := drained.Value / guarded.Value; ratio < 3.3 || ratio > 3.4 {
+		t.Fatalf("3%% left should lose the 0.3 guard: guarded=%v drained=%v", guarded.Value, drained.Value)
+	}
+	ex := AccountScoreWith(weeklyAccount("b", 1, 0.5, t0.Add(time.Hour)), "m", t0, 10*time.Minute, ScoreOptions{DrainToZero: true})
+	if !ex.Exhausted || ex.Value != 0 {
+		t.Fatalf("an exhausted window still zeroes the account: %+v", ex)
+	}
+}

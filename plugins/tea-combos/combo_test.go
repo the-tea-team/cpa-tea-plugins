@@ -142,3 +142,10 @@ func TestParseSeedConfigResetBoost(t *testing.T) {
 		t.Fatalf("invalid resetBoost must be rejected, got %v", err)
 	}
 }
+
+func TestParseSeedConfigDrainToZero(t *testing.T) {
+	cfg, err := parseSeedConfig([]byte("drainToZero: true\n"))
+	if err != nil || !cfg.DrainToZero {
+		t.Fatalf("drainToZero not parsed: %+v %v", cfg, err)
+	}
+}

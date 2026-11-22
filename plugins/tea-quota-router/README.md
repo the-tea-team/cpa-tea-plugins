@@ -35,7 +35,13 @@ plugins:
       resetBoost:            # optional; omit to disable
         horizonHours: 24
         maxMultiplier: 6
+      drainToZero: false     # optional; true drops the headroom guard
 ```
+
+`drainToZero: true` removes the headroom guard, which normally scales an account down once any window
+has less than 10% left. With it, an account keeps full weight until a window is actually exhausted.
+Expect a few 429s right at exhaustion: the snapshot only refreshes every `pollIntervalSeconds`, so the
+scheduler learns an account is empty up to one poll late.
 
 `resetBoost` spends quota that is about to expire. When an account's weekly (or any window longer
 than `horizonHours`) resets within `horizonHours`, its score is multiplied by a factor that ramps

@@ -44,3 +44,10 @@ func TestParseConfigResetBoost(t *testing.T) {
 		t.Fatalf("resetBoost must default off: %+v %v", c.ResetBoost, err)
 	}
 }
+
+func TestParseConfigDrainToZero(t *testing.T) {
+	c, err := parseConfig([]byte("dataDir: /tmp/x\ndrainToZero: true\n"))
+	if err != nil || !c.DrainToZero {
+		t.Fatalf("drainToZero not parsed: %+v %v", c, err)
+	}
+}
