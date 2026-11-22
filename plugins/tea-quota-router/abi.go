@@ -28,6 +28,7 @@ import (
 	"errors"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/the-tea-team/cpa-tea-plugins/internal/tea/quota"
 	"time"
 	"unsafe"
 )
@@ -132,7 +133,7 @@ func abiHandleMethod(method string, raw []byte) (result []byte, err error) {
 		p.startCollector(nativeInventoryWith(nativeHostCall))
 		cfg := p.configCopy()
 		schedulerOn := cfg.SchedulerMode != "off"
-		return envelope(map[string]any{"schema_version": pluginabi.SchemaVersion, "metadata": pluginapi.Metadata{Name: "tea-quota-router", Version: "0.2.2", Author: "The Tea Team", GitHubRepository: "https://github.com/the-tea-team/cpa-tea-plugins"}, "capabilities": map[string]bool{"scheduler": schedulerOn, "scheduler_across_priorities": schedulerOn && cfg.QuotaAcrossPriorities, "management_api": true, "usage_plugin": true}})
+		return envelope(map[string]any{"schema_version": pluginabi.SchemaVersion, "metadata": pluginapi.Metadata{Name: "tea-quota-router", Version: "0.3.2", Author: "The Tea Team", GitHubRepository: "https://github.com/the-tea-team/cpa-tea-plugins"}, "capabilities": map[string]bool{"scheduler": schedulerOn, "scheduler_across_priorities": schedulerOn && cfg.QuotaAcrossPriorities, "management_api": true, "usage_plugin": true}})
 	case pluginabi.MethodPluginShutdown:
 		shutdown()
 		return envelope(map[string]any{})
@@ -181,8 +182,9 @@ func abiHandleMethod(method string, raw []byte) (result []byte, err error) {
 		strategy := strategyFor(r, p.cfg.ProviderStrategies)
 		age := p.cfg.MaxAgeSeconds
 		across := p.cfg.QuotaAcrossPriorities
+		opts := quota.ScoreOptions{ResetBoost: p.cfg.ResetBoost, DrainToZero: p.cfg.DrainToZero}
 		p.mu.RUnlock()
-		return envelope(p.scheduler.pickWith(r, p.snapshotCopy(), mode, strategy, time.Now(), time.Duration(age)*time.Second, across))
+		return envelope(p.scheduler.pickWithOptions(r, p.snapshotCopy(), mode, strategy, time.Now(), time.Duration(age)*time.Second, across, opts))
 	}
 	return nil, errors.New("unknown method")
 }

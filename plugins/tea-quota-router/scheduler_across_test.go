@@ -249,3 +249,39 @@ func TestSchedulerPickHonoursAcrossFlagFromConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestSchedulerResetBoostShiftsShare(t *testing.T) {
+	now := time.Now()
+	win := func(sessUsed, weekUsed float64, weekReset time.Duration) []quota.Window {
+		c := 5.0
+		su, wu := sessUsed, weekUsed
+		return []quota.Window{
+			{ID: "five_hour", DurationSeconds: 18000, UsedFraction: &su, ResetAt: now.Add(3 * time.Hour), ObservedAt: now, Capacity: &c, CapacitySource: "reported"},
+			{ID: "seven_day", DurationSeconds: 604800, UsedFraction: &wu, ResetAt: now.Add(weekReset), ObservedAt: now, Capacity: &c, CapacitySource: "reported"},
+		}
+	}
+	snap := quota.Snapshot{SchemaVersion: 1,
+		Accounts: []quota.Account{
+			{ID: "near", Provider: "mock", Windows: win(0.16, 0.84, 2*time.Hour)},
+			{ID: "far", Provider: "mock", Windows: win(0.06, 0.29, 83*time.Hour)},
+		},
+		Credentials: []quota.Credential{{ID: "near", AccountID: "near", Provider: "mock"}, {ID: "far", AccountID: "far", Provider: "mock"}},
+	}
+	req := pluginapi.SchedulerPickRequest{Provider: "mock", Model: "m", Candidates: []pluginapi.SchedulerAuthCandidate{{ID: "near"}, {ID: "far"}}}
+	count := func(opts quota.ScoreOptions) int {
+		s := newScheduler()
+		n := 0
+		for i := 0; i < 100; i++ {
+			if got := s.pickWithOptions(req, snap, "active", "quota-aware-round-robin", now, time.Hour, true, opts); got.AuthID == "near" {
+				n++
+			}
+		}
+		return n
+	}
+	plain := count(quota.ScoreOptions{})
+	boosted := count(quota.ScoreOptions{ResetBoost: quota.ResetBoost{HorizonHours: 24, MaxMultiplier: 3}})
+	if boosted < 80 || boosted <= plain {
+		t.Fatalf("near-reset picks out of 100: plain=%d boosted=%d", plain, boosted)
+	}
+	t.Logf("near-reset picks out of 100: plain=%d boosted=%d", plain, boosted)
+}

@@ -338,3 +338,36 @@ func accountOf(cred string) string {
 	}
 	return "A"
 }
+
+// boostedSource is a snapshot source that also carries scoring options.
+type boostedSource struct {
+	staticSnapshotSource
+	opts quota.ScoreOptions
+}
+
+func (s boostedSource) scoreOptions() quota.ScoreOptions { return s.opts }
+
+func TestAccountPlanResetBoostFavoursNearResetAccount(t *testing.T) {
+	snap := accountTestSnapshot(accountTestNow)
+	// acctA resets in 2h, acctB in 72h; equal capacity and usage.
+	snap.Accounts[0].Windows = []quota.Window{testWindow(accountTestNow, 1, 0.5)}
+	snap.Accounts[0].Windows[0].ResetAt = accountTestNow.Add(2 * time.Hour)
+	count := func(r *accountRouter) int {
+		combo, member := explicitComboMember(AccountStrategyQuotaAware, "claude-ab")
+		a := 0
+		for i := 0; i < 100; i++ {
+			if first := mustPlan(t, r, combo, member).Credentials[0]; first != "b1" {
+				a++
+			}
+		}
+		return a
+	}
+	plain := count(accountRouterFor(snap))
+	boosted := newAccountRouter(boostedSource{staticSnapshotSource{snap: snap, maxAge: 10 * time.Minute}, quota.ScoreOptions{ResetBoost: quota.ResetBoost{HorizonHours: 24, MaxMultiplier: 3}}})
+	boosted.now = func() time.Time { return accountTestNow }
+	got := count(boosted)
+	if got <= plain || got < 85 {
+		t.Fatalf("near-reset account picks out of 100: plain=%d boosted=%d", plain, got)
+	}
+	t.Logf("near-reset account picks out of 100: plain=%d boosted=%d", plain, got)
+}

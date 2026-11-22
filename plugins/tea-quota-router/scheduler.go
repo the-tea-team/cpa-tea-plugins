@@ -177,6 +177,11 @@ func (s *scheduler) pick(req pluginapi.SchedulerPickRequest, snap quota.Snapshot
 // pickWith is pick with an explicit priority policy: acrossPriorities=false
 // keeps the max-tier-only behavior.
 func (s *scheduler) pickWith(req pluginapi.SchedulerPickRequest, snap quota.Snapshot, mode, strategy string, now time.Time, maxAge time.Duration, acrossPriorities bool) pluginapi.SchedulerPickResponse {
+	return s.pickWithOptions(req, snap, mode, strategy, now, maxAge, acrossPriorities, quota.ScoreOptions{})
+}
+
+// pickWithOptions is pickWith with scoring options (for example the reset boost).
+func (s *scheduler) pickWithOptions(req pluginapi.SchedulerPickRequest, snap quota.Snapshot, mode, strategy string, now time.Time, maxAge time.Duration, acrossPriorities bool, opts quota.ScoreOptions) pluginapi.SchedulerPickResponse {
 	if mode == "off" || strategy != "quota-aware-round-robin" || len(req.Candidates) == 0 {
 		s.record(decision{At: now, Provider: req.Provider, Model: req.Model, Mode: mode, Reason: "inherited; accepted providers=" + strings.Join(req.Providers, ","), Scores: map[string]quota.Score{}})
 		return pluginapi.SchedulerPickResponse{}
@@ -255,7 +260,7 @@ func (s *scheduler) pickWith(req pluginapi.SchedulerPickRequest, snap quota.Snap
 		var exhausted bool
 		if cr, ok := creds[c.ID]; ok {
 			if a, ok := accounts[cr.AccountID]; ok {
-				score = quota.AccountScore(a, req.Model, now, maxAge)
+				score = quota.AccountScoreWith(a, req.Model, now, maxAge, opts)
 				if until, exhausted = knownExhaustion(a, req.Model, now, maxAge); exhausted {
 					score.Exhausted, score.Value, score.Known = true, 0, true
 				}

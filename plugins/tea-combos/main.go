@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
+	"github.com/the-tea-team/cpa-tea-plugins/internal/tea/quota"
 )
 
 const (
@@ -20,7 +21,7 @@ const (
 	defaultStateFileName = "tea-combos.state.json"
 )
 
-var pluginVersion = "0.5.0"
+var pluginVersion = "0.6.2"
 
 // defaultCooldownSeconds parks a member after a member-side failure when neither the combo nor
 // the plugin config overrides the window.
@@ -87,6 +88,7 @@ func newCombosPlugin(configYAML []byte, pluginDir string) (*combosPlugin, error)
 		}
 	}
 	weighted := newWeightedSelector(cfg.QuotaSnapshotPath, cfg.QuotaMaxAgeSeconds)
+	weighted.opts = quota.ScoreOptions{ResetBoost: cfg.ResetBoost, DrainToZero: cfg.DrainToZero}
 	return &combosPlugin{
 		store:           store,
 		roundRobin:      newRoundRobinSelector(),
@@ -161,6 +163,16 @@ func (p *combosPlugin) plugin() pluginapi.Plugin {
 					Name:        "quotaMaxAgeSeconds",
 					Type:        pluginapi.ConfigFieldTypeInteger,
 					Description: "Maximum observation age in seconds; default 600.",
+				},
+				{
+					Name:        "resetBoost",
+					Type:        pluginapi.ConfigFieldTypeObject,
+					Description: "Favour accounts whose weekly window resets soon: {horizonHours, maxMultiplier}. Omit to disable.",
+				},
+				{
+					Name:        "drainToZero",
+					Type:        pluginapi.ConfigFieldTypeBoolean,
+					Description: "Drop the headroom guard: accounts keep full weight until a window is exhausted.",
 				},
 				{
 					Name:        "combos",

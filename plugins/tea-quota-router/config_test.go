@@ -30,3 +30,24 @@ func TestQuotaAcrossPrioritiesFlag(t *testing.T) {
 		t.Fatal("non-bool flag accepted")
 	}
 }
+
+func TestParseConfigResetBoost(t *testing.T) {
+	c, err := parseConfig([]byte("dataDir: /tmp/x\nresetBoost:\n  horizonHours: 24\n  maxMultiplier: 6\n"))
+	if err != nil || c.ResetBoost.HorizonHours != 24 || c.ResetBoost.MaxMultiplier != 6 {
+		t.Fatalf("resetBoost not parsed: %+v %v", c.ResetBoost, err)
+	}
+	if _, err := parseConfig([]byte("dataDir: /tmp/x\nresetBoost:\n  horizonHours: 24\n  maxMultiplier: 0.5\n")); err == nil {
+		t.Fatal("invalid resetBoost must fail registration")
+	}
+	c, err = parseConfig([]byte("dataDir: /tmp/x\n"))
+	if err != nil || c.ResetBoost.Enabled() {
+		t.Fatalf("resetBoost must default off: %+v %v", c.ResetBoost, err)
+	}
+}
+
+func TestParseConfigDrainToZero(t *testing.T) {
+	c, err := parseConfig([]byte("dataDir: /tmp/x\ndrainToZero: true\n"))
+	if err != nil || !c.DrainToZero {
+		t.Fatalf("drainToZero not parsed: %+v %v", c, err)
+	}
+}
