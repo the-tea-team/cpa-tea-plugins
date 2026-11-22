@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/the-tea-team/cpa-tea-plugins/internal/tea/quota"
 	"gopkg.in/yaml.v3"
 )
 
@@ -210,6 +211,7 @@ type seedConfig struct {
 	StatePath          string
 	QuotaSnapshotPath  string
 	QuotaMaxAgeSeconds int
+	ResetBoost         quota.ResetBoost
 	Combos             []Combo
 	// CooldownSeconds is the plugin-wide cooling window. Nil means the built-in default;
 	// zero disables cooling.
@@ -228,12 +230,13 @@ func parseSeedConfig(raw []byte) (seedConfig, error) {
 		return cfg, nil
 	}
 	var doc struct {
-		StatePath          string    `yaml:"statePath"`
-		QuotaSnapshotPath  string    `yaml:"quotaSnapshotPath"`
-		QuotaMaxAgeSeconds int       `yaml:"quotaMaxAgeSeconds"`
-		CooldownSeconds    *int      `yaml:"cooldownSeconds"`
-		MaxCooldownSeconds *int      `yaml:"maxCooldownSeconds"`
-		Combos             yaml.Node `yaml:"combos"`
+		StatePath          string           `yaml:"statePath"`
+		QuotaSnapshotPath  string           `yaml:"quotaSnapshotPath"`
+		QuotaMaxAgeSeconds int              `yaml:"quotaMaxAgeSeconds"`
+		ResetBoost         quota.ResetBoost `yaml:"resetBoost"`
+		CooldownSeconds    *int             `yaml:"cooldownSeconds"`
+		MaxCooldownSeconds *int             `yaml:"maxCooldownSeconds"`
+		Combos             yaml.Node        `yaml:"combos"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return cfg, fmt.Errorf("parse plugins.configs.tea-combos: %w", err)
@@ -244,6 +247,10 @@ func parseSeedConfig(raw []byte) (seedConfig, error) {
 	if cfg.QuotaMaxAgeSeconds < 0 {
 		return cfg, fmt.Errorf("quotaMaxAgeSeconds must not be negative")
 	}
+	if err := doc.ResetBoost.Validate(); err != nil {
+		return cfg, err
+	}
+	cfg.ResetBoost = doc.ResetBoost
 	cfg.CooldownSeconds = doc.CooldownSeconds
 	cfg.MaxCooldownSeconds = doc.MaxCooldownSeconds
 	if doc.CooldownSeconds != nil && *doc.CooldownSeconds < 0 {

@@ -200,3 +200,104 @@ func TestPoolCredentialsRetryElapsedIncluded(t *testing.T) {
 		t.Fatalf("elapsed retry should be included: %v", got)
 	}
 }
+
+// weeklyAccount has a fresh session window and a weekly window resetting at weeklyReset.
+func weeklyAccount(id string, sessionUsed, weeklyUsed float64, weeklyReset time.Time) Account {
+	return Account{ID: id, Provider: "claude", ObservedAt: t0, Windows: []Window{
+		{ID: "five_hour", DurationSeconds: 18000, UsedFraction: ptr(sessionUsed), ResetAt: t0.Add(3 * time.Hour), ObservedAt: t0, Capacity: ptr(5), CapacitySource: "reported"},
+		{ID: "seven_day", DurationSeconds: 604800, UsedFraction: ptr(weeklyUsed), ResetAt: weeklyReset, ObservedAt: t0, Capacity: ptr(5), CapacitySource: "reported"},
+	}}
+}
+
+var testBoost = ScoreOptions{ResetBoost: ResetBoost{HorizonHours: 24, MaxMultiplier: 6}}
+
+func TestResetBoostZeroValueMatchesAccountScore(t *testing.T) {
+	a := weeklyAccount("a", 0.4, 0.8, t0.Add(2*time.Hour))
+	plain := AccountScore(a, "m", t0, 10*time.Minute)
+	with := AccountScoreWith(a, "m", t0, 10*time.Minute, ScoreOptions{})
+	if plain.Value != with.Value {
+		t.Fatalf("zero options must not change the score: %v vs %v", plain.Value, with.Value)
+	}
+}
+
+func TestResetBoostRampsInsideHorizonOnly(t *testing.T) {
+	cases := []struct {
+		reset time.Duration
+		want  float64
+	}{{48 * time.Hour, 1}, {24 * time.Hour, 1}, {12 * time.Hour, 3.5}, {2 * time.Hour, 1 + 5*(1-2.0/24)}}
+	for _, c := range cases {
+		a := weeklyAccount("a", 0.4, 0.5, t0.Add(c.reset))
+		plain := AccountScore(a, "m", t0, 10*time.Minute).Value
+		got := AccountScoreWith(a, "m", t0, 10*time.Minute, testBoost).Value
+		if ratio := got / plain; ratio < c.want-1e-9 || ratio > c.want+1e-9 {
+			t.Fatalf("reset in %v: boost ratio %v, want %v", c.reset, ratio, c.want)
+		}
+	}
+}
+
+func TestResetBoostIgnoresShortWindows(t *testing.T) {
+	// Only the session window resets soon; the weekly window is days away.
+	a := weeklyAccount("a", 0.4, 0.5, t0.Add(100*time.Hour))
+	plain := AccountScore(a, "m", t0, 10*time.Minute).Value
+	got := AccountScoreWith(a, "m", t0, 10*time.Minute, testBoost).Value
+	if got != plain {
+		t.Fatalf("a session window must never trigger the boost: %v vs %v", got, plain)
+	}
+}
+
+func TestResetBoostNeverRevivesExhausted(t *testing.T) {
+	a := weeklyAccount("a", 1, 0.5, t0.Add(time.Hour)) // session exhausted
+	sc := AccountScoreWith(a, "m", t0, 10*time.Minute, testBoost)
+	if !sc.Exhausted || sc.Value != 0 {
+		t.Fatalf("exhausted account must stay zero: %+v", sc)
+	}
+}
+
+func TestResetBoostIgnoresStaleObservation(t *testing.T) {
+	a := weeklyAccount("a", 0.4, 0.5, t0.Add(time.Hour))
+	for i := range a.Windows {
+		a.Windows[i].ObservedAt = t0.Add(-time.Hour)
+	}
+	sc := AccountScoreWith(a, "m", t0, 10*time.Minute, testBoost)
+	if sc.Known || sc.Value != 1 {
+		t.Fatalf("stale data must stay neutral, not boosted: %+v", sc)
+	}
+}
+
+func TestResetBoostDominatesShareNearReset(t *testing.T) {
+	// The live situation of 2026-11-22: one account 84% used resetting in 2h,
+	// others with lots left resetting in 3-4 days.
+	near := weeklyAccount("near", 0.16, 0.84, t0.Add(2*time.Hour))
+	far1 := weeklyAccount("far1", 0.24, 0.66, t0.Add(79*time.Hour))
+	far2 := weeklyAccount("far2", 0.06, 0.29, t0.Add(83*time.Hour))
+	share := func(o ScoreOptions) float64 {
+		n := AccountScoreWith(near, "m", t0, 10*time.Minute, o).Value
+		return n / (n + AccountScoreWith(far1, "m", t0, 10*time.Minute, o).Value + AccountScoreWith(far2, "m", t0, 10*time.Minute, o).Value)
+	}
+	before, after := share(ScoreOptions{}), share(testBoost)
+	if after < 0.75 || after <= before {
+		t.Fatalf("near-reset share should jump: before=%.2f after=%.2f", before, after)
+	}
+}
+
+func TestResetBoostHeadroomGuardStillApplies(t *testing.T) {
+	// 98% used and resetting in 1h: boosted, but the guard keeps it well under a healthy account.
+	empty := AccountScoreWith(weeklyAccount("a", 0.4, 0.98, t0.Add(time.Hour)), "m", t0, 10*time.Minute, testBoost)
+	healthy := AccountScoreWith(weeklyAccount("b", 0.4, 0.5, t0.Add(time.Hour)), "m", t0, 10*time.Minute, testBoost)
+	if empty.Value >= healthy.Value {
+		t.Fatalf("guard must still suppress a near-empty account: empty=%v healthy=%v", empty.Value, healthy.Value)
+	}
+}
+
+func TestResetBoostValidate(t *testing.T) {
+	for _, b := range []ResetBoost{{}, {HorizonHours: 24, MaxMultiplier: 6}, {HorizonHours: 1, MaxMultiplier: 1}} {
+		if err := b.Validate(); err != nil {
+			t.Fatalf("%+v should be valid: %v", b, err)
+		}
+	}
+	for _, b := range []ResetBoost{{HorizonHours: -1, MaxMultiplier: 2}, {HorizonHours: 24, MaxMultiplier: 0.5}, {HorizonHours: 24, MaxMultiplier: 1000}, {HorizonHours: 0, MaxMultiplier: 3}} {
+		if err := b.Validate(); err == nil {
+			t.Fatalf("%+v should be rejected", b)
+		}
+	}
+}

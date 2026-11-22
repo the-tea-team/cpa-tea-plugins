@@ -15,6 +15,7 @@ type weightedSelector struct {
 	snapshot  quota.Snapshot
 	path      string
 	maxAge    time.Duration
+	opts      quota.ScoreOptions
 	stop      chan struct{}
 	done      chan struct{}
 	closeOnce sync.Once
@@ -126,7 +127,7 @@ func (s *weightedSelector) Order(c Combo, _ string) []int {
 					ids[cred.AccountID] = true
 					for _, a := range snap.Accounts {
 						if a.ID == cred.AccountID {
-							score := quota.AccountScore(a, m.Model, now, s.maxAge)
+							score := quota.AccountScoreWith(a, m.Model, now, s.maxAge, s.opts)
 							if score.Known {
 								capacity := normalizedCapacity(a, m.Model, now, s.maxAge)
 								if score.Exhausted && capacity == 0 {
@@ -203,6 +204,14 @@ func normalizedCapacity(a quota.Account, model string, now time.Time, maxAge tim
 
 // freshSnapshot hands the account router the cached snapshot and the configured maximum age. The
 // router owns the freshness decision; this only reads under the same lock Order uses.
+// scoreOptions returns the scoring tuning shared with the account router.
+func (s *weightedSelector) scoreOptions() quota.ScoreOptions {
+	if s == nil {
+		return quota.ScoreOptions{}
+	}
+	return s.opts
+}
+
 func (s *weightedSelector) freshSnapshot(time.Time) (quota.Snapshot, time.Duration, error) {
 	if s == nil || s.path == "" {
 		return quota.Snapshot{}, 0, fmt.Errorf("no quotaSnapshotPath configured")

@@ -132,3 +132,13 @@ func TestRewriteModelLeavesUnparseableBodyAlone(t *testing.T) {
 		t.Fatalf("rewriteModel changed a non-JSON body: %q", got)
 	}
 }
+
+func TestParseSeedConfigResetBoost(t *testing.T) {
+	cfg, err := parseSeedConfig([]byte("statePath: /tmp/x\nresetBoost:\n  horizonHours: 24\n  maxMultiplier: 6\n"))
+	if err != nil || cfg.ResetBoost.HorizonHours != 24 || cfg.ResetBoost.MaxMultiplier != 6 {
+		t.Fatalf("resetBoost not parsed: %+v %v", cfg.ResetBoost, err)
+	}
+	if _, err := parseSeedConfig([]byte("resetBoost:\n  horizonHours: -3\n  maxMultiplier: 6\n")); err == nil || !strings.Contains(err.Error(), "horizonHours") {
+		t.Fatalf("invalid resetBoost must be rejected, got %v", err)
+	}
+}

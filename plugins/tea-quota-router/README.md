@@ -32,7 +32,17 @@ plugins:
       managementKeyEnv: CPA_QUOTA_MANAGEMENT_KEY
       pollIntervalSeconds: 180
       maxAgeSeconds: 600
+      resetBoost:            # optional; omit to disable
+        horizonHours: 24
+        maxMultiplier: 6
 ```
+
+`resetBoost` spends quota that is about to expire. When an account's weekly (or any window longer
+than `horizonHours`) resets within `horizonHours`, its score is multiplied by a factor that ramps
+linearly from 1 at the horizon to `maxMultiplier` at the reset. Session windows never trigger it.
+It applies after the headroom guard, so a nearly empty account stays suppressed, and it never revives
+an exhausted, stale or unknown account. Decisions show `reset boost xN` in their reasons. tea-combos
+reads its own `resetBoost` block for combo account and member weighting; set both to the same value.
 
 `CPA_QUOTA_MANAGEMENT_KEY` is an environment-variable reference, not a key value. Supply through your protected service environment. The collector uses only the literal loopback management origin and fixed provider endpoint allowlist. It never duplicates OAuth refresh tokens. With no management client, inventory and gateway usage still work; upstream collection reports setup-required.
 

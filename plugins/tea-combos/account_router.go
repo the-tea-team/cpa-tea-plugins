@@ -26,6 +26,11 @@ type snapshotSource interface {
 	freshSnapshot(now time.Time) (quota.Snapshot, time.Duration, error)
 }
 
+// scoreTuner is optionally implemented by a snapshotSource that carries scoring options.
+type scoreTuner interface {
+	scoreOptions() quota.ScoreOptions
+}
+
 // accountPlanRequest is everything one member attempt needs to pick accounts. It is built per
 // invocation; nothing in it is shared between requests.
 type accountPlanRequest struct {
@@ -57,6 +62,17 @@ type accountRouter struct {
 
 func newAccountRouter(src snapshotSource) *accountRouter {
 	return &accountRouter{src: src, now: time.Now, rr: quota.NewSmoothRR(), wait: waitForSnapshot}
+}
+
+// scoreOptions returns the source's scoring options, or the defaults.
+func (r *accountRouter) scoreOptions() quota.ScoreOptions {
+	if r == nil || r.src == nil {
+		return quota.ScoreOptions{}
+	}
+	if t, ok := r.src.(scoreTuner); ok {
+		return t.scoreOptions()
+	}
+	return quota.ScoreOptions{}
 }
 
 // waitForSnapshot sleeps for d unless the context ends first.
@@ -316,7 +332,7 @@ func (r *accountRouter) groupAccounts(snap quota.Snapshot, credentials []quota.C
 		// sibling to escape to, so the member fails and the combo falls to its next member.
 		if strategy == AccountStrategyQuotaAware || pinned {
 			if account, ok := accounts[id]; ok {
-				score := quota.AccountScore(account, model, now, maxAge)
+				score := quota.AccountScoreWith(account, model, now, maxAge, r.scoreOptions())
 				if score.Known && score.Exhausted {
 					continue // known-empty accounts are never pinned
 				}
