@@ -279,7 +279,7 @@ func TestSchedulerResetBoostShiftsShare(t *testing.T) {
 		return n
 	}
 	plain := count(quota.ScoreOptions{})
-	boosted := count(quota.ScoreOptions{ResetBoost: quota.ResetBoost{HorizonHours: 24, MaxMultiplier: 6}})
+	boosted := count(quota.ScoreOptions{ResetBoost: quota.ResetBoost{HorizonHours: 24, MaxMultiplier: 3}})
 	if boosted < 80 || boosted <= plain {
 		t.Fatalf("near-reset picks out of 100: plain=%d boosted=%d", plain, boosted)
 	}

@@ -21,12 +21,16 @@ func AccountScore(a Account, model string, now time.Time, maxAge time.Duration) 
 // ResetBoost favours accounts whose long quota window (weekly) is about to
 // reset, because whatever they have left is lost at the reset. A window
 // qualifies only when it is longer than the horizon, so short session windows
-// (which always reset within a day) never trigger it. The multiplier ramps
-// linearly from 1 at HorizonHours before the reset to MaxMultiplier at the
-// reset itself. The zero value disables the boost.
+// (which always reset within a day) never trigger it. By default the
+// multiplier is a flat MaxMultiplier for the whole horizon, so a soft value
+// (2-3x) spreads the extra traffic over the last day instead of spiking it
+// at the end. Ramp=true instead grows it linearly from 1 at the horizon to
+// MaxMultiplier at the reset. Several accounts may be boosted at once. The
+// zero value disables the boost.
 type ResetBoost struct {
 	HorizonHours  float64 `json:"horizonHours" yaml:"horizonHours"`
 	MaxMultiplier float64 `json:"maxMultiplier" yaml:"maxMultiplier"`
+	Ramp          bool    `json:"ramp,omitempty" yaml:"ramp,omitempty"`
 }
 
 // Enabled reports whether the boost changes any score.
@@ -61,6 +65,9 @@ func (b ResetBoost) multiplier(w Window, now time.Time) float64 {
 	ttr := w.ResetAt.Sub(now).Seconds()
 	if ttr <= 0 || ttr >= horizon {
 		return 1
+	}
+	if !b.Ramp {
+		return b.MaxMultiplier
 	}
 	return 1 + (b.MaxMultiplier-1)*(1-ttr/horizon)
 }

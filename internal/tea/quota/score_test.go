@@ -1,6 +1,7 @@
 package quota
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -209,7 +210,32 @@ func weeklyAccount(id string, sessionUsed, weeklyUsed float64, weeklyReset time.
 	}}
 }
 
-var testBoost = ScoreOptions{ResetBoost: ResetBoost{HorizonHours: 24, MaxMultiplier: 6}}
+var testBoost = ScoreOptions{ResetBoost: ResetBoost{HorizonHours: 24, MaxMultiplier: 6, Ramp: true}}
+
+func TestResetBoostStepIsFlatInsideHorizon(t *testing.T) {
+	step := ScoreOptions{ResetBoost: ResetBoost{HorizonHours: 24, MaxMultiplier: 3}}
+	for _, c := range []struct {
+		reset time.Duration
+		want  float64
+	}{{48 * time.Hour, 1}, {24 * time.Hour, 1}, {23 * time.Hour, 3}, {12 * time.Hour, 3}, {10 * time.Minute, 3}} {
+		a := weeklyAccount("a", 0.4, 0.5, t0.Add(c.reset))
+		plain := AccountScore(a, "m", t0, 10*time.Minute).Value
+		got := AccountScoreWith(a, "m", t0, 10*time.Minute, step).Value
+		if ratio := got / plain; ratio < c.want-1e-9 || ratio > c.want+1e-9 {
+			t.Fatalf("step boost, reset in %v: ratio %v, want %v", c.reset, ratio, c.want)
+		}
+	}
+}
+
+func TestResetBoostStepBoostsSeveralAccounts(t *testing.T) {
+	step := ScoreOptions{ResetBoost: ResetBoost{HorizonHours: 24, MaxMultiplier: 3}}
+	for _, reset := range []time.Duration{2 * time.Hour, 20 * time.Hour} {
+		a := weeklyAccount("a", 0.4, 0.5, t0.Add(reset))
+		if got := AccountScoreWith(a, "m", t0, 10*time.Minute, step); len(got.Reasons) == 0 || !strings.Contains(got.Reasons[len(got.Reasons)-1], "reset boost x3.00") {
+			t.Fatalf("reset in %v should carry the boost reason: %+v", reset, got.Reasons)
+		}
+	}
+}
 
 func TestResetBoostZeroValueMatchesAccountScore(t *testing.T) {
 	a := weeklyAccount("a", 0.4, 0.8, t0.Add(2*time.Hour))

@@ -133,7 +133,7 @@ func abiHandleMethod(method string, raw []byte) (result []byte, err error) {
 		p.startCollector(nativeInventoryWith(nativeHostCall))
 		cfg := p.configCopy()
 		schedulerOn := cfg.SchedulerMode != "off"
-		return envelope(map[string]any{"schema_version": pluginabi.SchemaVersion, "metadata": pluginapi.Metadata{Name: "tea-quota-router", Version: "0.3.1", Author: "The Tea Team", GitHubRepository: "https://github.com/the-tea-team/cpa-tea-plugins"}, "capabilities": map[string]bool{"scheduler": schedulerOn, "scheduler_across_priorities": schedulerOn && cfg.QuotaAcrossPriorities, "management_api": true, "usage_plugin": true}})
+		return envelope(map[string]any{"schema_version": pluginabi.SchemaVersion, "metadata": pluginapi.Metadata{Name: "tea-quota-router", Version: "0.3.2", Author: "The Tea Team", GitHubRepository: "https://github.com/the-tea-team/cpa-tea-plugins"}, "capabilities": map[string]bool{"scheduler": schedulerOn, "scheduler_across_priorities": schedulerOn && cfg.QuotaAcrossPriorities, "management_api": true, "usage_plugin": true}})
 	case pluginabi.MethodPluginShutdown:
 		shutdown()
 		return envelope(map[string]any{})

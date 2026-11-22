@@ -21,7 +21,7 @@ const (
 	defaultStateFileName = "tea-combos.state.json"
 )
 
-var pluginVersion = "0.6.1"
+var pluginVersion = "0.6.2"
 
 // defaultCooldownSeconds parks a member after a member-side failure when neither the combo nor
 // the plugin config overrides the window.

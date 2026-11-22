@@ -363,7 +363,7 @@ func TestAccountPlanResetBoostFavoursNearResetAccount(t *testing.T) {
 		return a
 	}
 	plain := count(accountRouterFor(snap))
-	boosted := newAccountRouter(boostedSource{staticSnapshotSource{snap: snap, maxAge: 10 * time.Minute}, quota.ScoreOptions{ResetBoost: quota.ResetBoost{HorizonHours: 24, MaxMultiplier: 6}}})
+	boosted := newAccountRouter(boostedSource{staticSnapshotSource{snap: snap, maxAge: 10 * time.Minute}, quota.ScoreOptions{ResetBoost: quota.ResetBoost{HorizonHours: 24, MaxMultiplier: 3}}})
 	boosted.now = func() time.Time { return accountTestNow }
 	got := count(boosted)
 	if got <= plain || got < 85 {

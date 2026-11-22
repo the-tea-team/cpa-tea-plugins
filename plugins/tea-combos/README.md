@@ -48,7 +48,7 @@ plugins:
     tea-combos:
       enabled: true
       statePath: /var/lib/cli-proxy-api/tea-combos.state.json   # optional
-      resetBoost: {horizonHours: 24, maxMultiplier: 6}         # optional; see tea-quota-router README
+      resetBoost: {horizonHours: 24, maxMultiplier: 3}         # optional; see tea-quota-router README
       combos:
         fast-fleet:
           strategy: round-robin        # round-robin (default) or failover
